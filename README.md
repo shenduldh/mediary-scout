@@ -205,6 +205,10 @@ That is why an agent environment like `OpenClaw`, or any other setup that suppor
 
 Without scheduled execution, the skill still works well for one-off and initialization tasks, but you lose the full value of automated follow-up.
 
+If your agent environment runs continuously and supports scheduled jobs, you can use the example host prompt in [docs/openclaw-type3-example.md](docs/openclaw-type3-example.md) as the basis for configuring a recurring Type 3 run.
+
+In practice, that means a user can ask an OpenClaw-style agent, or any other 24x7 agent with cron-style scheduling, to create a daily Type 3 monitoring job from that example.
+
 ## PanSou: Public vs Self-Hosted
 
 `pansou-web` is required as the search backend, but self-hosting is optional.
@@ -321,6 +325,7 @@ For the exact bootstrap protocol, see [Bootstrap Init](references/00-bootstrap-i
 - [references/05-type1-checklist.md](references/05-type1-checklist.md): one-time acquisition checklist
 - [references/06-type2-checklist.md](references/06-type2-checklist.md): tracking initialization checklist
 - [references/07-type3-checklist.md](references/07-type3-checklist.md): scheduled monitoring checklist
+- [docs/openclaw-type3-example.md](docs/openclaw-type3-example.md): example host prompt for scheduled Type 3 runs
 - [scripts](scripts): runtime modules
 - [tests](tests): module tests
 
