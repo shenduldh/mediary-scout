@@ -8,6 +8,7 @@ import {
   type NotificationEvent,
   type TrackedSeason,
   type TransferAttempt,
+  type WorkflowStatus,
 } from "./domain.js";
 import type { AgentNodes, ResourceProvider, StorageExecutor } from "./ports.js";
 
@@ -15,12 +16,13 @@ const TYPE2_WORKFLOW_RUN_ID = "run_type2";
 const FIXED_CREATED_AT = "2026-01-01T00:00:00.000Z";
 
 export interface WorkflowResult {
-  status: "succeeded";
+  status: WorkflowStatus;
   episodes: EpisodeState[];
   obtainedEpisodes: string[];
   transferAttempts: TransferAttempt[];
   decisions: AgentDecision[];
   notification: NotificationEvent;
+  notifications: NotificationEvent[];
   auditEvents: AuditEvent[];
 }
 
@@ -82,6 +84,14 @@ export async function runType2Initialization(input: {
   const obtainedEpisodes = reconciledEpisodes
     .filter((episode) => episode.obtained)
     .map((episode) => episode.episodeCode);
+  const notification: NotificationEvent = {
+    id: "notification_run_type2",
+    workflowRunId: TYPE2_WORKFLOW_RUN_ID,
+    kind: "tracking_initialized",
+    title: `${input.title.title} tracking initialized`,
+    body: `${obtainedEpisodes.length} episodes obtained`,
+    createdAt: FIXED_CREATED_AT,
+  };
 
   return {
     status: "succeeded",
@@ -89,14 +99,8 @@ export async function runType2Initialization(input: {
     obtainedEpisodes,
     transferAttempts,
     decisions: [decision],
-    notification: {
-      id: "notification_run_type2",
-      workflowRunId: TYPE2_WORKFLOW_RUN_ID,
-      kind: "tracking_initialized",
-      title: `${input.title.title} tracking initialized`,
-      body: `${obtainedEpisodes.length} episodes obtained`,
-      createdAt: FIXED_CREATED_AT,
-    },
+    notification,
+    notifications: [notification],
     auditEvents,
   };
 }

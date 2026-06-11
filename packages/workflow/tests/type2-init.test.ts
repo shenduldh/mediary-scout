@@ -86,5 +86,6 @@ describe("runType2Initialization", () => {
       airStatus: "unaired",
     });
     expect(result.notification.body).toContain("14 episodes obtained");
+    expect(result.notifications).toEqual([result.notification]);
   });
 });
