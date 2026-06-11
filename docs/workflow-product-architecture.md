@@ -630,6 +630,12 @@ aired + missing             -> visible gap / retry cell
 obtained + provider-ahead   -> full cell with metadata-pending nuance
 ```
 
+In the TypeScript kernel, `getTrackedSeasonStatusView()` is the read-side
+projection for this UI. It loads the tracked season state from the repository
+and returns compact episode cells with `displayState` values such as
+`unaired`, `missing_aired`, `obtained`, and `provider_ahead`. The browser should
+render this projection instead of duplicating episode-state rules.
+
 This also explains an important Type 3 rule from the current skill: before
 searching for a missing episode, Type 3 should inspect the target directory.
 If the file already exists, it should mark the episode obtained and stop for

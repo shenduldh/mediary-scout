@@ -17,6 +17,7 @@ import {
   type PersistedWorkflowRunSnapshot,
   type PersistWorkflowRunSnapshotInput,
   type ReserveWorkflowRunInput,
+  type TrackedSeasonState,
   validateWorkflowRunSnapshot,
   withDerivedEpisodeSummaries,
   workflowSnapshotFromReservation,
@@ -220,6 +221,30 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     const latest = workflowRuns[0];
     return latest ? this.getWorkflowRunSnapshot(latest.id) : null;
+  }
+
+  async getTrackedSeasonState(trackedSeasonId: string): Promise<TrackedSeasonState | null> {
+    const season = this.selectPayload<TrackedSeason>(
+      "SELECT payload FROM tracked_seasons WHERE id = ?",
+      trackedSeasonId,
+    );
+    if (!season) {
+      return null;
+    }
+
+    const title = this.selectPayload<MediaTitle>(
+      "SELECT payload FROM media_titles WHERE id = ?",
+      season.mediaTitleId,
+    );
+    if (!title) {
+      throw new Error(`Missing media title ${season.mediaTitleId} for tracked season ${season.id}`);
+    }
+
+    return {
+      title,
+      season,
+      episodes: this.selectEpisodeStates(season.id),
+    };
   }
 
   async listEpisodeStates(trackedSeasonId: string): Promise<EpisodeState[]> {

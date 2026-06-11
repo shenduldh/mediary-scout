@@ -27,6 +27,12 @@ export interface PersistedWorkflowRunSnapshot extends PersistWorkflowRunSnapshot
   providerAheadEpisodes: string[];
 }
 
+export interface TrackedSeasonState {
+  title: MediaTitle;
+  season: TrackedSeason;
+  episodes: EpisodeState[];
+}
+
 export interface ReserveWorkflowRunInput extends PersistWorkflowRunSnapshotInput {
   blockIfEpisodeStatesExist?: boolean;
 }
@@ -53,6 +59,7 @@ export interface WorkflowRepository {
     trackedSeasonId: string;
     kind: WorkflowKind;
   }): Promise<PersistedWorkflowRunSnapshot | null>;
+  getTrackedSeasonState(trackedSeasonId: string): Promise<TrackedSeasonState | null>;
   listEpisodeStates(trackedSeasonId: string): Promise<EpisodeState[]>;
 }
 
@@ -124,6 +131,21 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       .sort((a, b) => b.workflowRun.startedAt.localeCompare(a.workflowRun.startedAt));
     const latest = activeRuns[0];
     return latest ? withDerivedEpisodeSummaries(cloneWorkflowValue(latest)) : null;
+  }
+
+  async getTrackedSeasonState(trackedSeasonId: string): Promise<TrackedSeasonState | null> {
+    const latestSnapshot = Array.from(this.workflowRuns.values())
+      .filter((snapshot) => snapshot.season.id === trackedSeasonId)
+      .sort((a, b) => b.workflowRun.startedAt.localeCompare(a.workflowRun.startedAt))[0];
+    if (!latestSnapshot) {
+      return null;
+    }
+
+    return cloneWorkflowValue({
+      title: latestSnapshot.title,
+      season: latestSnapshot.season,
+      episodes: this.episodesBySeason.get(trackedSeasonId) ?? latestSnapshot.episodes,
+    });
   }
 
   async listEpisodeStates(trackedSeasonId: string): Promise<EpisodeState[]> {
