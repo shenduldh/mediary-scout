@@ -175,7 +175,7 @@ function CandidateCard({
   const isTv = candidate.mediaType === "tv";
   return (
     <article className="candidate-card">
-      <Link className="candidate-poster" href={`/show/${candidate.tmdbId}`} aria-hidden tabIndex={-1}>
+      <Link className="candidate-poster" href={`/show/${candidate.tmdbId}?from=search`} aria-hidden tabIndex={-1}>
         {candidate.posterPath ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={`https://image.tmdb.org/t/p/w342${candidate.posterPath}`} alt="" loading="lazy" />
@@ -187,7 +187,7 @@ function CandidateCard({
         <div className="candidate-title-row">
           <div>
             <h3>
-              <Link href={`/show/${candidate.tmdbId}`}>{candidate.title}</Link>
+              <Link href={`/show/${candidate.tmdbId}?from=search`}>{candidate.title}</Link>
             </h3>
             <p>
               {candidate.year} · {isTv ? "剧集" : "电影"}
@@ -195,7 +195,7 @@ function CandidateCard({
           </div>
           <div className="candidate-actions">
             {trackedLabel !== null ? (
-              <Link className="primary-button" href={`/show/${candidate.tmdbId}`}>
+              <Link className="primary-button" href={`/show/${candidate.tmdbId}?from=search`}>
                 查看详情
               </Link>
             ) : isTv ? (
@@ -266,7 +266,7 @@ function PosterCard({ entry }: { entry: LibraryWallEntry }) {
   const StateIcon = stateMeta.icon;
 
   return (
-    <Link className="wall-card" href={`/show/${entry.tmdbId}`}>
+    <Link className="wall-card" href={`/show/${entry.tmdbId}?from=library`}>
       <span className="wall-poster">
         {entry.posterPath ? (
           // eslint-disable-next-line @next/next/no-img-element

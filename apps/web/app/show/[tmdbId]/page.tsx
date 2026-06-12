@@ -16,14 +16,27 @@ const aggregateBadge = {
   complete: { label: "已全部入库", tone: "green" },
 } as const;
 
-export default function ShowPage({ params }: { params: Promise<{ tmdbId: string }> }) {
+export default async function ShowPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ tmdbId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // 搜索是搜索，媒体库是媒体库: the title page belongs to whichever surface
+  // the user came FROM. Entry links carry ?from=search|library; back keeps
+  // the previous list state (history.back preserves the search query).
+  const fromParam = ((await searchParams) ?? {})["from"];
+  const from = fromParam === "library" ? "library" : fromParam === "search" ? "search" : null;
+
   return (
     <div className="app-shell">
-      {/* A title page may be reached from search (untracked) or the library
-          (tracked) — highlight neither and let the back control use history. */}
-      <AppSidebar active="none" />
+      <AppSidebar active={from ?? "none"} />
       <main className="main product-main">
-        <BackLink />
+        <BackLink
+          label={from === "search" ? "返回搜索" : from === "library" ? "返回媒体库" : "返回"}
+          fallbackHref={from === "library" ? "/?tab=library" : "/?tab=search"}
+        />
         <Suspense fallback={<HubSkeleton />}>
           <TitleHub params={params} />
         </Suspense>

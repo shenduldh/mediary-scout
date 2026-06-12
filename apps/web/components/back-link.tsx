@@ -3,8 +3,18 @@
 import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-/** History-aware back: returns to wherever the user came from (search or library). */
-export function BackLink({ fallbackHref = "/" }: { fallbackHref?: string }) {
+/**
+ * Returns to where the user actually came from. history.back() preserves
+ * the previous list state (e.g. the search query); the fallback href covers
+ * direct navigation with no history.
+ */
+export function BackLink({
+  label = "返回",
+  fallbackHref = "/",
+}: {
+  label?: string;
+  fallbackHref?: string;
+}) {
   const router = useRouter();
   return (
     <button
@@ -19,7 +29,7 @@ export function BackLink({ fallbackHref = "/" }: { fallbackHref?: string }) {
       }}
     >
       <ArrowLeft size={16} aria-hidden />
-      返回
+      {label}
     </button>
   );
 }
