@@ -20,6 +20,9 @@ describe("TmdbMetadataProvider", () => {
             original_name: "翘楚",
             first_air_date: "2026-06-01",
             number_of_episodes: 24,
+            overview: "一部很好看的剧。",
+            poster_path: "/qiaochu-poster.jpg",
+            backdrop_path: "/qiaochu-backdrop.jpg",
             last_episode_to_air: {
               season_number: 1,
               episode_number: 14,
@@ -69,6 +72,9 @@ describe("TmdbMetadataProvider", () => {
         originalTitle: "翘楚",
         year: 2026,
         aliases: [],
+        posterPath: "/qiaochu-poster.jpg",
+        backdropPath: "/qiaochu-backdrop.jpg",
+        overview: "一部很好看的剧。",
       },
       season: {
         id: "tmdb_tv_289271_s1",
