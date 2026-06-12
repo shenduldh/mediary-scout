@@ -176,7 +176,11 @@ function CandidateCard({ candidate }: { candidate: SearchCandidateCard }) {
       <div className="candidate-body">
         <div className="candidate-title-row">
           <div>
-            <h3>{candidate.title}</h3>
+            <h3>
+              <Link href={`/show/${candidate.tmdbId}/${candidate.selectedSeasonNumber ?? 1}`}>
+                {candidate.title}
+              </Link>
+            </h3>
             <p>
               {candidate.year} · {candidate.mediaType === "tv" ? `第 ${candidate.selectedSeasonNumber} 季` : "电影"}
             </p>
