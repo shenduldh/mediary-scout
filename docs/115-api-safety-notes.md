@@ -52,6 +52,23 @@ The guard provides:
 - risk-message detection;
 - circuit breaker behavior after a risk signal.
 
+`Storage115Executor` also accepts `writeScopeDirectoryIds`.
+
+When configured, mutating operations must target a directory inside one of those
+scope roots:
+
+- `createDirectory()` checks the parent directory;
+- `transfer()` checks the target directory before listing or receiving a share;
+- `flattenDirectory()` still checks for a safe season/movie leaf, then checks
+  that the leaf is inside the write scope;
+- `deleteFiles()` checks the declared target directory, re-lists verified videos,
+  and refuses to delete file ids that are not present in that target.
+
+This is the product-side replacement for the old skill's prompt-level warning
+that agents must not flatten or delete in the wrong directory. The future live
+adapter should wire development runs to `MEDIA_TRACK_115_TEST_ROOT_CID`, and
+production runs to an explicit user/library write scope.
+
 The current guard is pure TypeScript and tested with fake APIs. It does not call the real 115 API.
 
 ## Live Adapter Direction
@@ -63,4 +80,5 @@ When the real 115 adapter is added, it should:
 - set list page sizes below the configured max response budget;
 - keep a short-lived per-run cache for directory listings;
 - refuse live write operations unless the target path is inside the configured write scope;
+- keep `MEDIA_TRACK_115_TEST_ROOT_CID` as the default development write scope;
 - use the user's own 115 credentials, while product-level TMDB/resource-provider credentials remain server-side.

@@ -1650,6 +1650,18 @@ requires an injected `Pan115StorageApi`. A future account-connection service can
 decrypt a user's stored credential, build the concrete 115 API client for that
 user, and pass only that scoped client into the workflow run.
 
+The executor now also has two structural safety hooks before live 115 writes:
+
+- `Pan115ApiGuard`, for request spacing, call budgets, large-list fail-closed
+  behavior, and risk-control circuit breaking.
+- `writeScopeDirectoryIds`, for requiring create / transfer / flatten / delete
+  mutations to stay inside an explicit development test root or production
+  library scope.
+
+This turns the old skill's prompt discipline around "do not mutate the wrong
+directory" into a program boundary. The agent node can still judge resources,
+but it cannot grant itself broader 115 authority.
+
 This keeps the product aligned with the larger credential boundary:
 
 ```text

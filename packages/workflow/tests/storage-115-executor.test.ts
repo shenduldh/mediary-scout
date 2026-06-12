@@ -186,6 +186,165 @@ describe("Storage115Executor", () => {
     });
   });
 
+  it("allows transfers when the target directory is inside the configured write scope", async () => {
+    const api = new FakePan115Api({
+      shareFiles: {
+        abc123: [
+          {
+            fid: "file_1",
+            n: "Show.S01E01.mkv",
+            s: "1000000000",
+          },
+        ],
+      },
+      directoryInfo: {
+        season_1: seasonPathInfo("test_root", "season_1"),
+      },
+    });
+    const executor = new Storage115Executor({ api, writeScopeDirectoryIds: ["test_root"] });
+
+    const attempt = await executor.transfer({
+      workflowRunId: "run_1",
+      directoryId: "season_1",
+      candidate: candidateFixture({
+        type: "115",
+        providerPayload: {
+          url: "https://115.com/s/abc123?password=pw",
+          rawType: "115",
+        },
+      }),
+    });
+
+    expect(attempt.status).toBe("succeeded");
+    expect(api.receivedShares).toHaveLength(1);
+  });
+
+  it("rejects transfers outside the configured write scope before touching the target", async () => {
+    const api = new FakePan115Api({
+      shareFiles: {
+        abc123: [
+          {
+            fid: "file_1",
+            n: "Show.S01E01.mkv",
+            s: "1000000000",
+          },
+        ],
+      },
+      directoryInfo: {
+        outside_season: seasonPathInfo("other_root", "outside_season"),
+      },
+    });
+    const executor = new Storage115Executor({ api, writeScopeDirectoryIds: ["test_root"] });
+
+    await expect(
+      executor.transfer({
+        workflowRunId: "run_1",
+        directoryId: "outside_season",
+        candidate: candidateFixture({
+          type: "115",
+          providerPayload: {
+            url: "https://115.com/s/abc123?password=pw",
+            rawType: "115",
+          },
+        }),
+      }),
+    ).rejects.toThrow("WRITE_SCOPE_VIOLATION");
+    expect(api.listCalls).toEqual([]);
+    expect(api.receivedShares).toEqual([]);
+  });
+
+  it("rejects delete operations outside the configured write scope", async () => {
+    const api = new FakePan115Api({
+      directoryInfo: {
+        outside_season: seasonPathInfo("other_root", "outside_season"),
+      },
+    });
+    const executor = new Storage115Executor({ api, writeScopeDirectoryIds: ["test_root"] });
+
+    await expect(
+      executor.deleteFiles({
+        directoryId: "outside_season",
+        fileIds: ["file_1"],
+      }),
+    ).rejects.toThrow("WRITE_SCOPE_VIOLATION");
+    expect(api.deletes).toEqual([]);
+  });
+
+  it("deletes only file ids verified inside the target directory", async () => {
+    const api = new FakePan115Api({
+      directories: {
+        season_1: [
+          {
+            fid: "file_1",
+            n: "Show.S01E01.mkv",
+            s: "1000000000",
+          },
+        ],
+      },
+      directoryInfo: {
+        season_1: seasonPathInfo("test_root", "season_1"),
+      },
+    });
+    const executor = new Storage115Executor({ api, writeScopeDirectoryIds: ["test_root"] });
+
+    await expect(
+      executor.deleteFiles({
+        directoryId: "season_1",
+        fileIds: ["file_1"],
+      }),
+    ).resolves.toEqual({ deleted: ["file_1"] });
+    expect(api.deletes).toEqual([{ fileIds: ["file_1"] }]);
+  });
+
+  it("rejects delete file ids that were not verified in the target directory", async () => {
+    const api = new FakePan115Api({
+      directories: {
+        season_1: [
+          {
+            fid: "file_1",
+            n: "Show.S01E01.mkv",
+            s: "1000000000",
+          },
+        ],
+      },
+      directoryInfo: {
+        season_1: seasonPathInfo("test_root", "season_1"),
+      },
+    });
+    const executor = new Storage115Executor({ api, writeScopeDirectoryIds: ["test_root"] });
+
+    await expect(
+      executor.deleteFiles({
+        directoryId: "season_1",
+        fileIds: ["file_2"],
+      }),
+    ).rejects.toThrow("SAFETY_VIOLATION: refusing to delete unverified file ids");
+    expect(api.deletes).toEqual([]);
+  });
+
+  it("allows creating folders only under the configured write scope", async () => {
+    const api = new FakePan115Api({
+      directoryInfo: {
+        outside_parent: seasonPathInfo("other_root", "outside_parent"),
+      },
+    });
+    const executor = new Storage115Executor({ api, writeScopeDirectoryIds: ["test_root"] });
+
+    await expect(
+      executor.createDirectory({
+        name: "media-track-smoke",
+        parentId: "outside_parent",
+      }),
+    ).rejects.toThrow("WRITE_SCOPE_VIOLATION");
+
+    await expect(
+      executor.createDirectory({
+        name: "media-track-smoke",
+        parentId: "test_root",
+      }),
+    ).resolves.toContain("test_root_media-track-smoke");
+  });
+
   it("spaces 115 API calls through the configured guard", async () => {
     const api = new FakePan115Api({
       shareFiles: {
@@ -435,4 +594,16 @@ function cloneDirectories(input: Record<string, Pan115Item[]>): Record<string, P
       items.map((item) => ({ ...item })),
     ]),
   );
+}
+
+function seasonPathInfo(rootId: string, seasonId: string): Pan115DirectoryInfo {
+  return {
+    state: true,
+    path: [
+      { cid: "0", name: "root" },
+      { cid: rootId, name: "Media Track Test Root" },
+      { cid: "show_1", name: "Show" },
+      { cid: seasonId, name: "Season 1" },
+    ],
+  };
 }

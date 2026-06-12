@@ -81,6 +81,7 @@ export interface Storage115ExecutorOptions {
   apiGuard?: Pan115ApiGuard;
   apiGuardOptions?: Pan115ApiGuardOptions;
   protectedDirectoryIds?: string[];
+  writeScopeDirectoryIds?: string[];
   moviesDirectoryId?: string;
   minVideoSizeBytes?: number;
   videoExtensions?: string[];
@@ -257,6 +258,7 @@ interface VideoFact {
 export class Storage115Executor implements StorageExecutor {
   private readonly api: Pan115StorageApi;
   private readonly protectedDirectoryIds: Set<string>;
+  private readonly writeScopeDirectoryIds: Set<string>;
   private readonly moviesDirectoryId: string | null;
   private readonly minVideoSizeBytes: number;
   private readonly videoExtensions: Set<string>;
@@ -267,6 +269,7 @@ export class Storage115Executor implements StorageExecutor {
     this.api = options.api;
     this.apiGuard = options.apiGuard ?? new Pan115ApiGuard(options.apiGuardOptions);
     this.protectedDirectoryIds = new Set(["0", ...(options.protectedDirectoryIds ?? [])]);
+    this.writeScopeDirectoryIds = new Set(options.writeScopeDirectoryIds ?? []);
     this.moviesDirectoryId = options.moviesDirectoryId ?? null;
     this.minVideoSizeBytes = options.minVideoSizeBytes ?? 10 * 1024 * 1024;
     this.videoExtensions = new Set(
@@ -275,7 +278,8 @@ export class Storage115Executor implements StorageExecutor {
   }
 
   async createDirectory(input: { name: string; parentId: string }): Promise<string> {
-    return this.callApi("createFolder", () => this.api.createFolder(input));
+    const safeParentId = await this.assertWithinWriteScope(input.parentId, "create directory");
+    return this.callApi("createFolder", () => this.api.createFolder({ ...input, parentId: safeParentId }));
   }
 
   async listVideoFiles(directoryId: string): Promise<VerifiedFile[]> {
@@ -288,9 +292,10 @@ export class Storage115Executor implements StorageExecutor {
     directoryId: string;
     candidate: ResourceCandidate;
   }): Promise<TransferAttempt> {
-    const before = new Set((await this.listVideoFiles(input.directoryId)).map((file) => file.id));
-    const action = await this.executeCandidateTransfer(input.candidate, input.directoryId);
-    const after = await this.listVideoFiles(input.directoryId);
+    const safeDirectoryId = await this.assertWithinWriteScope(input.directoryId, "transfer");
+    const before = new Set((await this.listVideoFiles(safeDirectoryId)).map((file) => file.id));
+    const action = await this.executeCandidateTransfer(input.candidate, safeDirectoryId);
+    const after = await this.listVideoFiles(safeDirectoryId);
     const materializedFileIds = after
       .filter((file) => !before.has(file.id))
       .map((file) => file.id);
@@ -311,6 +316,7 @@ export class Storage115Executor implements StorageExecutor {
 
   async flattenDirectory(directoryId: string): Promise<{ moved: string[]; removed: string[] }> {
     const safeDirectoryId = await this.assertSafeFlattenTarget(directoryId);
+    await this.assertWithinWriteScope(safeDirectoryId, "flatten directory");
     const videos = await this.collectVideos(safeDirectoryId, safeDirectoryId);
     const moveCandidates = videos.filter(
       (video) => video.sourceDirectoryId !== safeDirectoryId && video.sizeBytes >= this.minVideoSizeBytes,
@@ -358,6 +364,8 @@ export class Storage115Executor implements StorageExecutor {
     if (input.fileIds.length === 0) {
       return { deleted: [] };
     }
+    const safeDirectoryId = await this.assertWithinWriteScope(input.directoryId, "delete files");
+    await this.assertFilesBelongToDirectory(safeDirectoryId, input.fileIds);
     const result = await this.callApi("deleteItems", () => this.api.deleteItems({ fileIds: input.fileIds }));
     return { deleted: result.ok ? input.fileIds : [] };
   }
@@ -428,6 +436,46 @@ export class Storage115Executor implements StorageExecutor {
         "SAFETY_VIOLATION: flatten target must be a movie leaf under MOVIES_CID " +
           "or end with 'Season <number>'; " +
           `path=${joinedPath}`,
+      );
+    }
+
+    return normalized;
+  }
+
+  private async assertFilesBelongToDirectory(directoryId: string, fileIds: string[]): Promise<void> {
+    const verifiedFileIds = new Set((await this.listVideoFiles(directoryId)).map((file) => file.providerFileId));
+    const unverifiedFileIds = fileIds.filter((fileId) => !verifiedFileIds.has(fileId));
+    if (unverifiedFileIds.length === 0) {
+      return;
+    }
+    throw new Error(
+      "SAFETY_VIOLATION: refusing to delete unverified file ids from target directory; " +
+        `cid=${directoryId}; fileIds=${unverifiedFileIds.join(",")}`,
+    );
+  }
+
+  private async assertWithinWriteScope(directoryId: string, action: string): Promise<string> {
+    const normalized = normalizeDirectoryId(directoryId);
+    if (this.writeScopeDirectoryIds.size === 0) {
+      return normalized;
+    }
+    if (this.writeScopeDirectoryIds.has(normalized)) {
+      return normalized;
+    }
+
+    const info = await this.callApi("getDirectoryInfo", () => this.api.getDirectoryInfo({ directoryId: normalized }));
+    if (!info?.state) {
+      throw new Error(
+        `WRITE_SCOPE_VIOLATION: unable to verify ${action} target cid=${normalized}`,
+      );
+    }
+    const pathIds = info.path.map((part) => stringValue(part.cid)).filter((cid) => cid.length > 0);
+    const pathNames = info.path.map((part) => stringValue(part.name)).filter((name) => name.length > 0);
+    const joinedPath = pathNames.length > 0 ? pathNames.join("/") : "(unknown)";
+    if (!pathIds.some((cid) => this.writeScopeDirectoryIds.has(cid))) {
+      throw new Error(
+        `WRITE_SCOPE_VIOLATION: refusing to ${action} outside configured write scope; ` +
+          `cid=${normalized}; path=${joinedPath}`,
       );
     }
 
