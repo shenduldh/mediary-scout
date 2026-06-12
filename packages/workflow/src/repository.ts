@@ -70,11 +70,23 @@ export interface WorkflowRepository {
   listEpisodeStates(trackedSeasonId: string): Promise<EpisodeState[]>;
   /** Most-recent-first notification feed across all workflow runs. */
   listNotifications(input?: { limit?: number }): Promise<NotificationEvent[]>;
+  /** Generic app settings (e.g. the 115 cookie obtained via QR login). */
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string): Promise<void>;
 }
 
 export class InMemoryWorkflowRepository implements WorkflowRepository {
   private readonly workflowRuns = new Map<string, PersistWorkflowRunSnapshotInput>();
   private readonly episodesBySeason = new Map<string, EpisodeState[]>();
+  private readonly settings = new Map<string, string>();
+
+  async getSetting(key: string): Promise<string | null> {
+    return this.settings.get(key) ?? null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    this.settings.set(key, value);
+  }
 
   async saveWorkflowRunSnapshot(input: PersistWorkflowRunSnapshotInput): Promise<void> {
     validateWorkflowRunSnapshot(input);

@@ -117,6 +117,7 @@ export async function queueCandidateTracking(candidateId: string): Promise<Candi
 
 export async function runNextQueuedWorkflow() {
   const repository = getWorkflowRepository();
+  await hydratePan115CookieFromDb();
   const startedAt = new Date().toISOString();
   const type2 = await runQueuedType2Workflow({
     repository,
@@ -229,6 +230,7 @@ export async function queueCandidateSeries(candidateId: string): Promise<Candida
 
 export async function runScheduledType3() {
   const repository = getWorkflowRepository();
+  await hydratePan115CookieFromDb();
   const startedAt = new Date().toISOString();
   const result = await runScheduledType3Monitoring({
     repository,
@@ -477,4 +479,88 @@ function moviesParentDirectoryId(): string {
     process.env.MEDIA_TRACK_115_TEST_ROOT_CID ??
     "fake_movies_root"
   );
+}
+
+// ---------------------------------------------------------------------------
+// 115 connection (QR login) — cookie lives in the DB once connected; the
+// repo-root .env PAN115_COOKIE remains the bootstrap fallback.
+
+const PAN115_COOKIE_KEY = "pan115.cookie";
+const PAN115_META_KEY = "pan115.cookieMeta";
+
+let pan115CookieHydrated = false;
+
+/** DB cookie (newer truth from QR connect) wins over the .env bootstrap. */
+export async function hydratePan115CookieFromDb(): Promise<void> {
+  if (pan115CookieHydrated) {
+    return;
+  }
+  pan115CookieHydrated = true;
+  try {
+    const cookie = await getWorkflowRepository().getSetting(PAN115_COOKIE_KEY);
+    if (cookie) {
+      process.env.PAN115_COOKIE = cookie;
+    }
+  } catch (error) {
+    console.error(`[media-track] failed to hydrate 115 cookie from DB: ${String(error)}`);
+  }
+}
+
+export interface Pan115ConnectionStatus {
+  connected: boolean;
+  source: "qr" | "env" | "none";
+  userName: string | null;
+  app: string | null;
+  connectedAt: string | null;
+}
+
+export async function getPan115ConnectionStatus(): Promise<Pan115ConnectionStatus> {
+  const repository = getWorkflowRepository();
+  const cookie = await repository.getSetting(PAN115_COOKIE_KEY);
+  if (cookie) {
+    const metaRaw = await repository.getSetting(PAN115_META_KEY);
+    let meta: { userName?: string; app?: string; connectedAt?: string } = {};
+    try {
+      meta = metaRaw ? (JSON.parse(metaRaw) as typeof meta) : {};
+    } catch {
+      meta = {};
+    }
+    return {
+      connected: true,
+      source: "qr",
+      userName: meta.userName ?? null,
+      app: meta.app ?? null,
+      connectedAt: meta.connectedAt ?? null,
+    };
+  }
+  if (process.env.PAN115_COOKIE) {
+    return { connected: true, source: "env", userName: null, app: null, connectedAt: null };
+  }
+  return { connected: false, source: "none", userName: null, app: null, connectedAt: null };
+}
+
+export async function completePan115QrLogin(input: {
+  session: { uid: string; time: number; sign: string; qrcodeContent: string };
+  app?: string;
+}): Promise<{ userName: string; app: string }> {
+  const { Pan115QrLoginClient, PAN115_QR_LOGIN_APPS } = await import("@media-track/workflow");
+  const app = (PAN115_QR_LOGIN_APPS as readonly string[]).includes(input.app ?? "")
+    ? (input.app as (typeof PAN115_QR_LOGIN_APPS)[number])
+    : "alipaymini";
+  const client = new Pan115QrLoginClient();
+  const result = await client.exchangeCookie(input.session, app);
+  const repository = getWorkflowRepository();
+  await repository.setSetting(PAN115_COOKIE_KEY, result.cookie);
+  await repository.setSetting(
+    PAN115_META_KEY,
+    JSON.stringify({
+      userName: result.userName,
+      app: result.app,
+      connectedAt: new Date().toISOString(),
+    }),
+  );
+  // Take effect immediately: the 115 executor is built from process.env per call.
+  process.env.PAN115_COOKIE = result.cookie;
+  pan115CookieHydrated = true;
+  return { userName: result.userName, app: result.app };
 }

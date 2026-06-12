@@ -569,3 +569,20 @@ function workflowPersistenceFixture(
     ...overrides,
   };
 }
+
+describe("app settings", () => {
+  it("round-trips settings in sqlite and in-memory repositories", async () => {
+    const { SQLiteWorkflowRepository, InMemoryWorkflowRepository } = await import("../src/index.js");
+    const { DatabaseSync } = await import("node:sqlite");
+    for (const repository of [
+      new SQLiteWorkflowRepository(new DatabaseSync(":memory:")),
+      new InMemoryWorkflowRepository(),
+    ]) {
+      expect(await repository.getSetting("pan115.cookie")).toBeNull();
+      await repository.setSetting("pan115.cookie", "UID=a; CID=b; SEID=c");
+      expect(await repository.getSetting("pan115.cookie")).toBe("UID=a; CID=b; SEID=c");
+      await repository.setSetting("pan115.cookie", "UID=new");
+      expect(await repository.getSetting("pan115.cookie")).toBe("UID=new");
+    }
+  });
+});

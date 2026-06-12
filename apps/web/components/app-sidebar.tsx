@@ -53,15 +53,15 @@ export function AppSidebar({
       </nav>
 
       <div className="sidebar-footer">
-        <div className="health-card">
+        <Link className="health-card" href="/settings" style={{ textDecoration: "none", color: "inherit" }}>
           <span className="health-icon">
             <ShieldCheck size={16} aria-hidden />
           </span>
           <span>
-            <strong>115 已连接</strong>
-            <span>最近验证 2 分钟前</span>
+            <strong>115 连接</strong>
+            <span>查看状态 / 扫码连接</span>
           </span>
-        </div>
+        </Link>
       </div>
     </aside>
   );

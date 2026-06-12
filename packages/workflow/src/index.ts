@@ -24,3 +24,4 @@ export * from "./package-normalizer.js";
 export * from "./search-view.js";
 export * from "./runtime-policy.js";
 export * from "./notify.js";
+export * from "./pan115-qrcode-login.js";

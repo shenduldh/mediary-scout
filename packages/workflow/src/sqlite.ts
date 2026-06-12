@@ -86,6 +86,10 @@ export function initializeWorkflowSqliteSchema(database: DatabaseSync): void {
       FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id)
     );
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS notifications (
       id TEXT PRIMARY KEY,
       workflow_run_id TEXT NOT NULL,
@@ -318,6 +322,19 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     const all = rows.map((row) => JSON.parse(row.payload) as NotificationEvent);
     all.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return all.slice(0, input?.limit ?? 100);
+  }
+
+  async getSetting(key: string): Promise<string | null> {
+    const row = this.database
+      .prepare("SELECT value FROM app_settings WHERE key = ?")
+      .get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    this.database
+      .prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)")
+      .run(key, value);
   }
 
   private upsertMediaTitle(title: MediaTitle): void {
