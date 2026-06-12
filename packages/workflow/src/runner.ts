@@ -64,6 +64,7 @@ export async function runType3MonitoringAndPersist(input: {
   agents: AgentNodes;
   repository: WorkflowRepository;
   workflowRun: WorkflowRunMetadata;
+  storageParentDirectoryId?: string;
 }): Promise<WorkflowResult> {
   const result = await runType3Monitoring({
     title: input.title,
@@ -74,6 +75,9 @@ export async function runType3MonitoringAndPersist(input: {
     storage: input.storage,
     agents: input.agents,
     workflowRunId: input.workflowRun.id,
+    ...(input.storageParentDirectoryId === undefined
+      ? {}
+      : { storageParentDirectoryId: input.storageParentDirectoryId }),
   });
 
   await persistWorkflowResult({

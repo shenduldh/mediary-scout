@@ -78,6 +78,7 @@ describe("requestTrackingInitialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {},
         keywordErrors: { "Show 4K": "provider should not be searched when a run is active" },
@@ -126,6 +127,7 @@ describe("requestTrackingInitialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
           "Show 4K": [{ title: "Show S01E01 4K", episodeHints: ["S01E01"] }],
@@ -196,6 +198,7 @@ describe("requestTrackingInitialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {},
         keywordErrors: { "Show 4K": "provider should not be searched for tracked state" },
@@ -237,6 +240,7 @@ describe("requestTrackingInitialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
           "Show 4K": [
@@ -292,6 +296,7 @@ describe("requestTrackingInitialization", () => {
         title,
         season,
         keyword: "Show 4K",
+        storageParentDirectoryId: "library_root",
         resourceProvider: new FakeResourceProvider({
           keywordResults: {},
           keywordErrors: { "Show 4K": "provider unavailable" },
@@ -310,6 +315,7 @@ describe("requestTrackingInitialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
           "Show 4K": [{ title: "Show S01E01 4K", episodeHints: ["S01E01"] }],

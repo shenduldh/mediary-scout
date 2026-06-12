@@ -121,6 +121,7 @@ export async function runScheduledType3Monitoring(input: {
   resourceProvider: ResourceProvider;
   storage: StorageExecutor;
   agents: AgentNodes;
+  storageParentDirectoryId: string;
   now?: () => string;
   createWorkflowRunId?: () => string;
   staleActiveRunTimeoutMs?: number;
@@ -179,6 +180,7 @@ export async function runScheduledType3Monitoring(input: {
         agents: input.agents,
         repository: input.repository,
         workflowRun: { id: workflowRunId, startedAt, finishedAt: now() },
+        storageParentDirectoryId: input.storageParentDirectoryId,
       });
       outcomes.push({
         trackedSeasonId: state.season.id,

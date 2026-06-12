@@ -94,6 +94,7 @@ describe("runScheduledType3Monitoring", () => {
       resourceProvider: new FakeResourceProvider({ keywordResults: {} }),
       storage: new FakeStorageExecutor(),
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
     });
 
@@ -125,6 +126,7 @@ describe("runScheduledType3Monitoring", () => {
       }),
       storage,
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
       createWorkflowRunId: () => "run_sched_type3",
     });
@@ -158,6 +160,7 @@ describe("runScheduledType3Monitoring", () => {
       }),
       storage,
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
       createWorkflowRunId: () => "run_noop_type3",
     });
@@ -205,6 +208,7 @@ describe("runScheduledType3Monitoring", () => {
       resourceProvider: new FakeResourceProvider({ keywordResults: {} }),
       storage: new FakeStorageExecutor(),
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
     });
 
@@ -256,6 +260,7 @@ describe("runScheduledType3Monitoring", () => {
       }),
       storage,
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
       createWorkflowRunId: () => `run_multi_${(counter += 1)}`,
     });

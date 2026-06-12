@@ -32,6 +32,7 @@ describe("requestTrackingFromTmdbSelection", () => {
       seasonNumber: 1,
       qualityPreference: "4K",
       storageDirectoryId: "dir_qiaochu_s1",
+      storageParentDirectoryId: "library_root",
       metadataProvider,
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
@@ -110,6 +111,7 @@ describe("requestTrackingFromTmdbSelection", () => {
       seasonNumber: 1,
       qualityPreference: "4K",
       storageDirectoryId: "dir_qiaochu_s1",
+      storageParentDirectoryId: "library_root",
       metadataProvider: qiaochuMetadataProvider(),
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
@@ -137,6 +139,7 @@ describe("requestTrackingFromTmdbSelection", () => {
       seasonNumber: 1,
       qualityPreference: "4K",
       storageDirectoryId: "dir_qiaochu_s1",
+      storageParentDirectoryId: "library_root",
       metadataProvider: qiaochuMetadataProvider(),
       resourceProvider: new FakeResourceProvider({
         keywordResults: {},

@@ -76,6 +76,7 @@ describe("runType2Initialization", () => {
       title,
       season,
       keyword: "翘楚 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider,
       storage,
       agents: new FakeAgentNodes(),
@@ -158,6 +159,7 @@ describe("runType2Initialization", () => {
       title,
       season,
       keyword: "翘楚 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider,
       storage,
       agents: new FakeAgentNodes(),
@@ -213,6 +215,7 @@ describe("runType2Initialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider,
       storage: new FakeStorageExecutor({ directories: { dir_show_s1: [] } }),
       agents: new FakeAgentNodes(),
@@ -253,6 +256,7 @@ describe("runType2Initialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
           "Show 4K": [
@@ -310,6 +314,7 @@ describe("runType2Initialization", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
           "Show 4K": [
@@ -467,6 +472,7 @@ describe("runType2Initialization canonical landing directory", () => {
       title,
       season,
       keyword: "Show 4K",
+      storageParentDirectoryId: "library_root",
       resourceProvider: new FakeResourceProvider({
         keywordResults: {
           "Show 4K": [{ title: "Show S01E01 4K", episodeHints: ["S01E01"] }],
@@ -474,7 +480,6 @@ describe("runType2Initialization canonical landing directory", () => {
       }),
       storage,
       agents: new FakeAgentNodes(),
-      storageParentDirectoryId: "library_root",
     });
 
     expect(result.season.storageDirectoryId).toBe("library_root_Show (2026)_1_Season 1_2");

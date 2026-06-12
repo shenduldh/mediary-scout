@@ -124,6 +124,7 @@ export async function runScheduledType3() {
     resourceProvider: getWorkerResourceProvider(),
     storage: getWorkerStorageExecutor(),
     agents: getAgentNodes(),
+    storageParentDirectoryId: storageParentDirectoryId(),
     staleActiveRunTimeoutMs: 30 * 60 * 1000,
   });
 }

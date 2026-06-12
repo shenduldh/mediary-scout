@@ -15,6 +15,10 @@ import {
 } from "./domain.js";
 import { buildConfirmedDedupPlan } from "./dedup.js";
 import {
+  buildAgentAssistedPackageNormalizationPlan,
+  type PackageMoveAction,
+} from "./package-normalizer.js";
+import {
   deriveAgentDecision,
   validateAcquisitionPlan,
   type SelectedTransferCandidate,
@@ -59,13 +63,20 @@ export async function runType2Initialization(input: {
 }): Promise<WorkflowResult> {
   const workflowRunId = input.workflowRunId ?? TYPE2_WORKFLOW_RUN_ID;
   const auditEvents: AuditEvent[] = [];
-  const season = await ensureLandingDirectory({
+  const landing = await ensureLandingDirectory({
     title: input.title,
     season: input.season,
     storage: input.storage,
     storageParentDirectoryId: input.storageParentDirectoryId,
     auditEvents,
   });
+  const season = landing.season;
+  const stagingParentDirectoryId = landing.showDirectoryId ?? input.storageParentDirectoryId;
+  if (stagingParentDirectoryId === undefined) {
+    throw new Error(
+      "MEDIA_TRACK_STAGING_PARENT_REQUIRED: provide storageParentDirectoryId so staging directories can live outside the season directory",
+    );
+  }
   const episodes = createEpisodeStates({
     trackedSeasonId: season.id,
     seasonNumber: season.seasonNumber,
@@ -79,7 +90,17 @@ export async function runType2Initialization(input: {
       ? emptyAcquisitionOutcome()
       : await acquireMissingEpisodes({
           title: input.title,
-          season,
+          seasons: [
+            {
+              seasonNumber: season.seasonNumber,
+              totalEpisodes: season.totalEpisodes,
+              latestAiredEpisode: season.latestAiredEpisode,
+            },
+          ],
+          seasonDirectoryIds: { [season.seasonNumber]: season.storageDirectoryId },
+          ...(landing.showDirectoryId === undefined ? {} : { showDirectoryId: landing.showDirectoryId }),
+          stagingParentDirectoryId,
+          qualityPreference: season.qualityPreference,
           keyword: input.keyword,
           missingEpisodes,
           resourceProvider: input.resourceProvider,
@@ -90,7 +111,6 @@ export async function runType2Initialization(input: {
           maxPlanningPasses: input.maxPlanningPasses ?? DEFAULT_MAX_PLANNING_PASSES,
         });
 
-  await input.storage.flattenDirectory(season.storageDirectoryId);
   const verifiedFiles = await dedupeLandingDirectory({
     storage: input.storage,
     directoryId: season.storageDirectoryId,
@@ -155,9 +175,9 @@ async function ensureLandingDirectory(input: {
   storage: StorageExecutor;
   storageParentDirectoryId: string | undefined;
   auditEvents: AuditEvent[];
-}): Promise<TrackedSeason> {
+}): Promise<{ season: TrackedSeason; showDirectoryId?: string }> {
   if (input.season.storageDirectoryId !== "") {
-    return input.season;
+    return { season: input.season };
   }
   if (!input.storageParentDirectoryId) {
     throw new Error(
@@ -178,7 +198,7 @@ async function ensureLandingDirectory(input: {
     message: `Created canonical landing directory ${showName}/Season ${input.season.seasonNumber}`,
     data: { showDirectoryId, seasonDirectoryId },
   });
-  return { ...input.season, storageDirectoryId: seasonDirectoryId };
+  return { season: { ...input.season, storageDirectoryId: seasonDirectoryId }, showDirectoryId };
 }
 
 export async function runType3Monitoring(input: {
@@ -191,6 +211,7 @@ export async function runType3Monitoring(input: {
   agents: AgentNodes;
   workflowRunId?: string;
   maxPlanningPasses?: number;
+  storageParentDirectoryId?: string;
 }): Promise<WorkflowResult> {
   const workflowRunId = input.workflowRunId ?? TYPE3_WORKFLOW_RUN_ID;
   if (input.season.storageDirectoryId === "") {
@@ -238,9 +259,23 @@ export async function runType3Monitoring(input: {
     };
   }
 
+  if (input.storageParentDirectoryId === undefined) {
+    throw new Error(
+      "MEDIA_TRACK_STAGING_PARENT_REQUIRED: provide storageParentDirectoryId so staging directories can live outside the season directory",
+    );
+  }
   const outcome = await acquireMissingEpisodes({
     title: input.title,
-    season: input.season,
+    seasons: [
+      {
+        seasonNumber: input.season.seasonNumber,
+        totalEpisodes: input.season.totalEpisodes,
+        latestAiredEpisode: input.season.latestAiredEpisode,
+      },
+    ],
+    seasonDirectoryIds: { [input.season.seasonNumber]: input.season.storageDirectoryId },
+    stagingParentDirectoryId: input.storageParentDirectoryId,
+    qualityPreference: input.season.qualityPreference,
     keyword: input.keyword,
     missingEpisodes: missingBefore,
     resourceProvider: input.resourceProvider,
@@ -251,7 +286,6 @@ export async function runType3Monitoring(input: {
     maxPlanningPasses: input.maxPlanningPasses ?? DEFAULT_MAX_PLANNING_PASSES,
   });
 
-  await input.storage.flattenDirectory(input.season.storageDirectoryId);
   const finalFiles = await dedupeLandingDirectory({
     storage: input.storage,
     directoryId: input.season.storageDirectoryId,
@@ -319,6 +353,12 @@ interface AcquisitionOutcome {
   transferAttempts: TransferAttempt[];
 }
 
+export interface AcquisitionSeasonScope {
+  seasonNumber: number;
+  totalEpisodes: number;
+  latestAiredEpisode: number;
+}
+
 function emptyAcquisitionOutcome(): AcquisitionOutcome {
   return { resourceSnapshots: [], decisions: [], transferAttempts: [] };
 }
@@ -326,13 +366,25 @@ function emptyAcquisitionOutcome(): AcquisitionOutcome {
 /**
  * The deterministic acquisition harness. The planning agent owns every
  * semantic choice (keywords, target matching, episode mapping, selection);
- * this loop owns every side effect and every verification. Recovery from a
- * transfer that materializes nothing is a fresh agent pass that sees the
- * failure evidence — never mechanical iteration over provider candidates.
+ * this loop owns every side effect and every verification.
+ *
+ * Unified staging path: every selected candidate transfers into its own
+ * staging directory first — never directly into a season directory — then
+ * package normalization distributes the materialized tree into canonical
+ * per-season directories. A candidate's claimed coverage is evidence; the
+ * landed tree is the truth. Files the normalization plan rejects stay
+ * quarantined in staging. Recovery from a transfer that materializes nothing
+ * is a fresh agent pass that sees the failure evidence — never mechanical
+ * iteration over provider candidates.
  */
 async function acquireMissingEpisodes(input: {
   title: MediaTitle;
-  season: TrackedSeason;
+  seasons: AcquisitionSeasonScope[];
+  /** seasonNumber -> existing season directory id; missing entries are find-or-created under showDirectoryId. */
+  seasonDirectoryIds: Record<number, string>;
+  showDirectoryId?: string;
+  stagingParentDirectoryId: string;
+  qualityPreference: string;
   keyword: string;
   missingEpisodes: string[];
   resourceProvider: ResourceProvider;
@@ -345,6 +397,10 @@ async function acquireMissingEpisodes(input: {
   const resourceSnapshots: ResourceSnapshot[] = [];
   const decisions: AgentDecision[] = [];
   const transferAttempts: TransferAttempt[] = [];
+  const seasonNumbers = input.seasons.map((season) => season.seasonNumber);
+  const latestAiredBySeason = Object.fromEntries(
+    input.seasons.map((season) => [season.seasonNumber, season.latestAiredEpisode]),
+  );
   let stillMissing = [...input.missingEpisodes];
   let failureEvidence: AcquisitionFailureEvidence[] = [];
 
@@ -352,14 +408,8 @@ async function acquireMissingEpisodes(input: {
     const planning = await input.agents.planAcquisition({
       title: input.title.title,
       aliases: input.title.aliases,
-      seasons: [
-        {
-          seasonNumber: input.season.seasonNumber,
-          totalEpisodes: input.season.totalEpisodes,
-          latestAiredEpisode: input.season.latestAiredEpisode,
-        },
-      ],
-      qualityPreference: input.season.qualityPreference,
+      seasons: input.seasons,
+      qualityPreference: input.qualityPreference,
       missingEpisodes: stillMissing,
       initialKeyword: input.keyword,
       failureEvidence,
@@ -372,7 +422,7 @@ async function acquireMissingEpisodes(input: {
       plan: planning.plan,
       snapshots: planning.snapshots,
       missingEpisodes: stillMissing,
-      seasonNumbers: [input.season.seasonNumber],
+      seasonNumbers,
     });
 
     if (validated.selectedSnapshot === null || validated.selectedCandidates.length === 0) {
@@ -402,24 +452,40 @@ async function acquireMissingEpisodes(input: {
       deriveAgentDecision({
         plan: planning.plan,
         missingEpisodes: stillMissing,
-        latestAiredBySeason: { [input.season.seasonNumber]: input.season.latestAiredEpisode },
+        latestAiredBySeason,
       }),
     );
 
     const passAttempts: TransferAttempt[] = [];
-    for (const selected of validated.selectedCandidates) {
+    for (const [index, selected] of validated.selectedCandidates.entries()) {
+      const stagingDirectoryId = await input.storage.createDirectory({
+        name: `staging-${input.workflowRunId}-p${pass}-c${index + 1}`,
+        parentId: input.stagingParentDirectoryId,
+      });
       const attempt = await input.storage.transfer({
         workflowRunId: input.workflowRunId,
-        directoryId: input.season.storageDirectoryId,
+        directoryId: stagingDirectoryId,
         candidate: selected.candidate,
       });
       passAttempts.push(attempt);
       transferAttempts.push(attempt);
+      await normalizeStagingDirectory({
+        title: input.title,
+        seasons: input.seasons,
+        seasonDirectoryIds: input.seasonDirectoryIds,
+        showDirectoryId: input.showDirectoryId,
+        stagingDirectoryId,
+        storage: input.storage,
+        agents: input.agents,
+        auditEvents: input.auditEvents,
+      });
     }
 
-    const filesAfterPass = await input.storage.listVideoFiles(input.season.storageDirectoryId);
-    const obtainedCodes = new Set(filesAfterPass.map((file) => file.episodeCode));
-    stillMissing = stillMissing.filter((code) => !obtainedCodes.has(code));
+    stillMissing = await stillMissingAcrossSeasons({
+      missingEpisodes: stillMissing,
+      seasonDirectoryIds: input.seasonDirectoryIds,
+      storage: input.storage,
+    });
 
     if (stillMissing.length > 0) {
       failureEvidence = buildFailureEvidence({
@@ -436,6 +502,99 @@ async function acquireMissingEpisodes(input: {
   }
 
   return { resourceSnapshots, decisions, transferAttempts };
+}
+
+/**
+ * Distribute one staging directory's landed tree into canonical season
+ * directories. Out-of-scope seasons and plan-rejected files stay quarantined
+ * in staging — never moved, never deleted.
+ */
+async function normalizeStagingDirectory(input: {
+  title: MediaTitle;
+  seasons: AcquisitionSeasonScope[];
+  seasonDirectoryIds: Record<number, string>;
+  showDirectoryId: string | undefined;
+  stagingDirectoryId: string;
+  storage: StorageExecutor;
+  agents: AgentNodes;
+  auditEvents: AuditEvent[];
+}): Promise<void> {
+  const tree = await input.storage.listTree({ directoryId: input.stagingDirectoryId });
+  if (tree.length === 0) {
+    return;
+  }
+  const plan = await buildAgentAssistedPackageNormalizationPlan({
+    title: input.title.title,
+    year: input.title.year,
+    files: tree,
+    totalSeasons: input.seasons.length,
+    agents: input.agents,
+  });
+  if (plan.rejectedFiles.length > 0) {
+    input.auditEvents.push({
+      type: "package_files_rejected",
+      message: `${plan.rejectedFiles.length} files stay quarantined in staging ${input.stagingDirectoryId}`,
+      data: { stagingDirectoryId: input.stagingDirectoryId, rejectedFiles: plan.rejectedFiles },
+    });
+  }
+
+  const inScope = new Set(input.seasons.map((season) => season.seasonNumber));
+  const actionsBySeason = new Map<number, PackageMoveAction[]>();
+  for (const action of plan.actions) {
+    const group = actionsBySeason.get(action.targetSeasonNumber) ?? [];
+    group.push(action);
+    actionsBySeason.set(action.targetSeasonNumber, group);
+  }
+
+  for (const [seasonNumber, actions] of actionsBySeason) {
+    if (!inScope.has(seasonNumber)) {
+      input.auditEvents.push({
+        type: "package_out_of_scope_season",
+        message: `Staging ${input.stagingDirectoryId} contains season ${seasonNumber} files outside this acquisition's scope; left in staging`,
+        data: { stagingDirectoryId: input.stagingDirectoryId, seasonNumber, fileCount: actions.length },
+      });
+      continue;
+    }
+    let seasonDirectoryId = input.seasonDirectoryIds[seasonNumber];
+    if (seasonDirectoryId === undefined) {
+      if (input.showDirectoryId === undefined) {
+        input.auditEvents.push({
+          type: "package_out_of_scope_season",
+          message: `No directory known for season ${seasonNumber} and no show directory to create one; files left in staging`,
+          data: { stagingDirectoryId: input.stagingDirectoryId, seasonNumber, fileCount: actions.length },
+        });
+        continue;
+      }
+      seasonDirectoryId = await input.storage.createDirectory({
+        name: `Season ${seasonNumber}`,
+        parentId: input.showDirectoryId,
+      });
+      input.seasonDirectoryIds[seasonNumber] = seasonDirectoryId;
+      input.auditEvents.push({
+        type: "landing_directory_created",
+        message: `Created canonical landing directory ${input.title.title} (${input.title.year})/Season ${seasonNumber}`,
+        data: { showDirectoryId: input.showDirectoryId, seasonDirectoryId },
+      });
+    }
+    await input.storage.moveFiles({
+      fileIds: actions.map((action) => action.providerFileId),
+      targetDirectoryId: seasonDirectoryId,
+    });
+  }
+}
+
+async function stillMissingAcrossSeasons(input: {
+  missingEpisodes: string[];
+  seasonDirectoryIds: Record<number, string>;
+  storage: StorageExecutor;
+}): Promise<string[]> {
+  const obtained = new Set<string>();
+  for (const directoryId of Object.values(input.seasonDirectoryIds)) {
+    for (const file of await input.storage.listVideoFiles(directoryId)) {
+      obtained.add(file.episodeCode);
+    }
+  }
+  return input.missingEpisodes.filter((code) => !obtained.has(code));
 }
 
 /**

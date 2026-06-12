@@ -19,6 +19,7 @@ describe("runQueuedType2Workflow", () => {
       resourceProvider: new FakeResourceProvider({ keywordResults: {} }),
       storage: new FakeStorageExecutor(),
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
     });
 
@@ -55,6 +56,7 @@ describe("runQueuedType2Workflow", () => {
         },
       }),
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
     });
 
@@ -92,6 +94,7 @@ describe("runQueuedType2Workflow", () => {
       }),
       storage: new FakeStorageExecutor(),
       agents: new FakeAgentNodes(),
+      storageParentDirectoryId: "library_root",
       now: fixedNow,
     });
 
