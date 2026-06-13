@@ -1119,23 +1119,45 @@ p {
   color: var(--text-muted);
 }
 
-.feed-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* Each notification is its own separated card, stacked with breathing room. */
+.feed-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feed-card {
   background: var(--bg-surface);
   border-radius: var(--radius-card);
-}
-
-.feed-item {
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 14px 16px;
   display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  padding: 16px 18px;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.feed-item + .feed-item {
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+.feed-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feed-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The status pill sits at the right edge of the head, beside the timestamp. */
+.feed-card-head .feed-status-pill {
+  margin-left: auto;
+}
+
+.feed-card-head .feed-time {
+  margin-left: 0;
 }
 
 .feed-icon {
@@ -1153,68 +1175,26 @@ p {
 .feed-icon.tone-amber { color: var(--warning); background: rgba(255, 164, 43, 0.12); }
 .feed-icon.tone-muted { color: var(--text-muted); }
 
-.feed-body {
+/* Body: the informative progress line(s), indented under the icon column. */
+.feed-card-lines {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
+  gap: 3px;
+  padding-left: 40px;
 }
 
-.feed-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.feed-title-row strong {
-  font-size: 14px;
-}
-
-.feed-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-raised);
-  color: var(--text-muted);
-}
-
-.feed-badge.tone-green { color: var(--accent); }
-.feed-badge.tone-blue { color: var(--info); }
-.feed-badge.tone-amber { color: var(--warning); }
-
-.feed-text {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* Structured report body — GUI rendering of the push report format */
-.feed-report {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.feed-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  color: var(--text-soft);
-}
-
-.feed-progress-text {
-  color: var(--text-soft);
-}
-
-.feed-report-line {
+.feed-card-line {
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-soft);
+}
+
+.feed-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding-left: 40px;
 }
 
 .feed-status-pill {
@@ -1264,101 +1244,35 @@ p {
 .feed-chip.is-new { color: var(--accent); background: rgba(30, 215, 96, 0.1); }
 .feed-chip.is-missing { color: var(--warning); background: rgba(255, 164, 43, 0.1); }
 
-/* Daily-routine digest — one block per scheduled sweep, many shows inside */
-.routine-digest {
-  background: var(--bg-surface);
-  border-radius: var(--radius-card);
-  border: 1px solid rgba(83, 157, 245, 0.16);
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+/* Routine sweep — the "nothing changed" checks folded into one quiet card that
+   names each show it verified, instead of a "其余 N 部" count. */
+.routine-card {
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
-.routine-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.routine-title {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.routine-time {
-  margin-left: auto;
-}
-
-.routine-rows {
+.routine-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 0 40px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-
-.routine-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.routine-dot {
-  width: 7px;
-  height: 7px;
-  min-width: 7px;
-  margin-top: 6px;
-  border-radius: 50%;
-  background: var(--info);
-}
-
-.routine-dot.is-finale {
-  background: var(--accent);
-}
-
-.routine-row-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.routine-row-title {
-  font-size: 13px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
 }
 
-.routine-finale-icon {
-  color: var(--accent);
-}
-
-.routine-row-meta {
+.routine-item {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  font-size: 12px;
-  color: var(--text-muted);
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 12.5px;
 }
 
-.routine-chips {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+.routine-name {
+  font-weight: 600;
+  color: var(--text-soft);
 }
 
-.routine-finale-text {
-  color: var(--accent);
-}
-
-.routine-tail {
-  margin: 0;
-  font-size: 12px;
+.routine-line {
   color: var(--text-muted);
 }
 

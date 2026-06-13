@@ -13,19 +13,22 @@ import {
   PartyPopper,
   TriangleAlert,
 } from "lucide-react";
-import type { NotificationEvent, NotificationReport, NotificationReportStatus } from "@media-track/workflow";
+import type { NotificationEvent, NotificationReportStatus } from "@media-track/workflow";
 import { AppSidebar } from "../../components/app-sidebar";
 import { ensureDemoSeeded, getWorkflowRepository } from "../../lib/workflow-runtime";
 
-const kindMeta: Record<string, { label: string; tone: string; icon: typeof Bell }> = {
-  series_initialized: { label: "全剧入库", tone: "green", icon: Layers },
-  package_initialized: { label: "电影入库", tone: "green", icon: Film },
-  tracking_initialized: { label: "开始追踪", tone: "indigo", icon: DownloadCloud },
-  episodes_restored: { label: "更新获取", tone: "indigo", icon: DownloadCloud },
-  tracking_completed: { label: "追踪完成", tone: "green", icon: PartyPopper },
-  already_current: { label: "已是最新", tone: "muted", icon: CheckCircle2 },
-  no_coverage: { label: "暂无资源", tone: "amber", icon: CircleSlash },
-  foreign_work_detected: { label: "待确认入库", tone: "amber", icon: Film },
+// The kind only drives the leading ICON now — its textual label used to render
+// as a second badge next to the status pill ("开始追踪" beside "已完结"), which
+// was redundant. The status pill is the single source of truth for state.
+const kindIcon: Record<string, { tone: string; icon: typeof Bell }> = {
+  series_initialized: { tone: "green", icon: Layers },
+  package_initialized: { tone: "green", icon: Film },
+  tracking_initialized: { tone: "indigo", icon: DownloadCloud },
+  episodes_restored: { tone: "indigo", icon: DownloadCloud },
+  tracking_completed: { tone: "green", icon: PartyPopper },
+  already_current: { tone: "muted", icon: CheckCircle2 },
+  no_coverage: { tone: "amber", icon: CircleSlash },
+  foreign_work_detected: { tone: "amber", icon: Film },
 };
 
 const statusMeta: Record<NotificationReportStatus, { label: string; tone: string; icon: typeof Bell }> = {
@@ -73,103 +76,112 @@ async function NotificationFeed() {
     );
   }
 
-  const groups = groupByDay(notifications);
+  const days = buildDays(notifications);
   return (
     <section className="feed">
-      {groups.map((group) => {
-        // A scheduled sweep covers many shows at once → one daily digest.
-        // User-triggered acquisitions are one-resource events → one card each.
-        const userEvents = group.items.filter((item) => item.trigger !== "scheduled");
-        const scheduledEvents = group.items.filter((item) => item.trigger === "scheduled");
-        return (
-          <section className="feed-day" key={group.dateKey}>
-            <header className="feed-day-header">
-              <span className="feed-day-label">{group.dayLabel}</span>
-              <span className="feed-day-summary">{daySummary(group.items)}</span>
-            </header>
-            <ul className="feed-list">
-              {userEvents.map((item) => (
-                <NotificationCard notification={item} key={item.id} />
-              ))}
-            </ul>
-            {scheduledEvents.length > 0 ? <DailyRoutineDigest items={scheduledEvents} /> : null}
-          </section>
-        );
-      })}
+      {days.map((day) => (
+        <section className="feed-day" key={day.dateKey}>
+          <header className="feed-day-header">
+            <span className="feed-day-label">{day.dayLabel}</span>
+            <span className="feed-day-summary">{day.summary}</span>
+          </header>
+          <div className="feed-cards">
+            {day.blocks.map((block) =>
+              block.type === "routine" ? (
+                <RoutineCard key={block.id} items={block.items} time={block.time} />
+              ) : (
+                <NotificationCard key={block.id} notification={block.notification} />
+              ),
+            )}
+          </div>
+        </section>
+      ))}
     </section>
   );
 }
 
+/** One acquisition/tracking event — its own separated card. */
 function NotificationCard({ notification }: { notification: NotificationEvent }) {
-  const meta = kindMeta[notification.kind] ?? { label: notification.kind, tone: "muted", icon: Bell };
-  const KindIcon = meta.icon;
+  const icon = kindIcon[notification.kind] ?? { tone: "muted", icon: Bell };
+  const KindIcon = icon.icon;
   const report = notification.report;
 
-  // Legacy / report-less events (foreign work, old records): minimal rendering.
+  // Legacy / report-less events (foreign work, old plain records).
   if (!report) {
     return (
-      <li className="feed-item">
-        <span className={`feed-icon tone-${meta.tone}`}>
-          <KindIcon size={15} aria-hidden />
-        </span>
-        <span className="feed-body">
-          <span className="feed-title-row">
-            <strong>{notification.title}</strong>
-            <span className={`feed-badge tone-${meta.tone}`}>{meta.label}</span>
+      <article className="feed-card">
+        <div className="feed-card-head">
+          <span className={`feed-icon tone-${icon.tone}`}>
+            <KindIcon size={15} aria-hidden />
           </span>
-          <span className="feed-text">{notification.body}</span>
-          {notification.kind === "foreign_work_detected" ? (
-            <Link
-              className="feed-action"
-              href={`/foreign-work/${encodeURIComponent(notification.workflowRunId)}`}
-            >
-              去处理 →
-            </Link>
-          ) : null}
-        </span>
-        <time className="feed-time" dateTime={notification.createdAt}>
-          {timeLabel(notification.createdAt)}
-        </time>
-      </li>
+          <strong className="feed-card-title">{notification.title}</strong>
+          <time className="feed-time" dateTime={notification.createdAt}>
+            {timeLabel(notification.createdAt)}
+          </time>
+        </div>
+        <p className="feed-card-line">{notification.body}</p>
+        {notification.kind === "foreign_work_detected" ? (
+          <Link
+            className="feed-action"
+            href={`/foreign-work/${encodeURIComponent(notification.workflowRunId)}`}
+          >
+            去处理 →
+          </Link>
+        ) : null}
+      </article>
     );
   }
 
   const status = statusMeta[report.status];
   const StatusIcon = status.icon;
-  const [firstLine, ...restLines] = report.lines;
   const heading = report.seasonLabel ? `${report.titleName} ${report.seasonLabel}` : report.titleName;
+  // A movie's only line is "已获取入库", which the "已入库" pill already conveys —
+  // drop it so the card carries no duplicated sentence. Seasons keep their
+  // informative progress line(s).
+  const lines = report.status === "acquired" ? [] : report.lines;
+  const hasChips = report.newlyObtained.length > 0 || report.realMissing.length > 0 || Boolean(report.quality);
 
   return (
-    <li className="feed-item">
-      <span className={`feed-icon tone-${meta.tone}`}>
-        <KindIcon size={15} aria-hidden />
-      </span>
-      <span className="feed-body">
-        <span className="feed-title-row">
-          <strong>{heading}</strong>
-          <span className={`feed-badge tone-${meta.tone}`}>{meta.label}</span>
+    <article className="feed-card">
+      <div className="feed-card-head">
+        <span className={`feed-icon tone-${icon.tone}`}>
+          <KindIcon size={15} aria-hidden />
         </span>
-        <span className="feed-report">
-          <span className="feed-progress">
-            <span className={`feed-status-pill tone-${status.tone}`}>
-              <StatusIcon size={11} aria-hidden />
-              {status.label}
-            </span>
-            {firstLine ? <span className="feed-progress-text">{firstLine}</span> : null}
-          </span>
-          {restLines.map((line) => (
-            <span className="feed-report-line" key={line}>
+        <strong className="feed-card-title">{heading}</strong>
+        <span className={`feed-status-pill tone-${status.tone}`}>
+          <StatusIcon size={11} aria-hidden />
+          {status.label}
+        </span>
+        <time className="feed-time" dateTime={notification.createdAt}>
+          {timeLabel(notification.createdAt)}
+        </time>
+      </div>
+
+      {lines.length > 0 ? (
+        <div className="feed-card-lines">
+          {lines.map((line) => (
+            <p className="feed-card-line" key={line}>
               {line}
-            </span>
+            </p>
           ))}
+        </div>
+      ) : null}
+
+      {hasChips ? (
+        <div className="feed-card-chips">
           <ChipGroup label="本次新增" codes={report.newlyObtained} variant="is-new" />
           <ChipGroup label="缺集" codes={report.realMissing} variant="is-missing" />
-        </span>
-      </span>
-      <time className="feed-time" dateTime={notification.createdAt}>
-        {timeLabel(notification.createdAt)}
-      </time>
-    </li>
+          {report.quality ? (
+            <span className="feed-chip-group">
+              <span className="feed-chip-label">画质</span>
+              <span className="feed-chips">
+                <span className="feed-chip">{report.quality}</span>
+              </span>
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -192,110 +204,126 @@ function ChipGroup({ label, codes, variant }: { label: string; codes: string[]; 
 }
 
 /**
- * The scheduled sweep touches many tracked shows at once, so it reads as a
- * single daily-routine digest rather than one card per show: shows that
- * changed get a detail row; shows checked with nothing to do collapse into a
- * tail count.
+ * A scheduled sweep that found nothing to do for a set of shows collapses into a
+ * single quiet "例行巡检" card that NAMES each show it checked (rather than a
+ * "其余 N 部" count), with the current state of each.
  */
-function DailyRoutineDigest({ items }: { items: NotificationEvent[] }) {
-  const changed = items.filter((item) => item.kind !== "already_current");
-  const unchanged = items.length - changed.length;
-  const latest = items.reduce((max, item) => (item.createdAt > max ? item.createdAt : max), items[0]!.createdAt);
-
+function RoutineCard({ items, time }: { items: NotificationEvent[]; time: string }) {
   return (
-    <div className="routine-digest">
-      <div className="routine-head">
-        <span className="feed-icon tone-indigo">
+    <article className="feed-card routine-card">
+      <div className="feed-card-head">
+        <span className="feed-icon tone-muted">
           <CalendarClock size={15} aria-hidden />
         </span>
-        <span className="routine-title">每日巡检</span>
-        <span className="feed-badge tone-indigo">{changed.length > 0 ? `${changed.length} 部更新` : "无更新"}</span>
-        <time className="feed-time routine-time" dateTime={latest}>
-          {timeLabel(latest)}
+        <strong className="feed-card-title">例行巡检</strong>
+        <span className="feed-status-pill tone-muted">
+          <CheckCircle2 size={11} aria-hidden />
+          {items.length} 项已最新
+        </span>
+        <time className="feed-time" dateTime={time}>
+          {timeLabel(time)}
         </time>
       </div>
-
-      {changed.length > 0 ? (
-        <ul className="routine-rows">
-          {changed.map((item) => (
-            <DigestRow notification={item} key={item.id} />
-          ))}
-        </ul>
-      ) : null}
-
-      <p className="routine-tail">
-        {changed.length === 0
-          ? "已检查全部追踪剧集，已播出集数均已获取。"
-          : unchanged > 0
-            ? `其余 ${unchanged} 部追踪剧集已是最新。`
-            : "全部追踪剧集已检查。"}
-      </p>
-    </div>
+      <ul className="routine-list">
+        {items.map((item) => {
+          const report = item.report;
+          const heading = report
+            ? report.seasonLabel
+              ? `${report.titleName} ${report.seasonLabel}`
+              : report.titleName
+            : item.title;
+          const line = report?.lines[0] ?? item.body;
+          return (
+            <li className="routine-item" key={item.id}>
+              <span className="routine-name">{heading}</span>
+              {line ? <span className="routine-line">{line}</span> : null}
+            </li>
+          );
+        })}
+      </ul>
+    </article>
   );
 }
 
-function DigestRow({ notification }: { notification: NotificationEvent }) {
-  const report = notification.report;
-  const heading = report
-    ? report.seasonLabel
-      ? `${report.titleName} ${report.seasonLabel}`
-      : report.titleName
-    : notification.title;
-  const finale = notification.kind === "tracking_completed";
+type Block =
+  | { type: "event"; id: string; time: string; notification: NotificationEvent }
+  | { type: "routine"; id: string; time: string; items: NotificationEvent[] };
 
-  return (
-    <li className="routine-row">
-      <span className={`routine-dot ${finale ? "is-finale" : ""}`} aria-hidden />
-      <span className="routine-row-body">
-        <span className="routine-row-title">
-          {heading}
-          {finale ? <PartyPopper size={12} aria-hidden className="routine-finale-icon" /> : null}
-        </span>
-        {report ? (
-          <span className="routine-row-meta">
-            {report.newlyObtained.length > 0 ? (
-              <span className="routine-chips">
-                本次新增
-                {report.newlyObtained.map((code) => (
-                  <span className="feed-chip is-new" key={code}>
-                    {code}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-            {report.realMissing.length > 0 ? (
-              <span className="routine-chips">
-                缺集
-                {report.realMissing.map((code) => (
-                  <span className="feed-chip is-missing" key={code}>
-                    {code}
-                  </span>
-                ))}
-              </span>
-            ) : null}
-            {finale ? <span className="routine-finale-text">{report.lines[0]}</span> : null}
-          </span>
-        ) : (
-          <span className="routine-row-meta">{notification.body}</span>
-        )}
-      </span>
-    </li>
-  );
+interface DayGroup {
+  dateKey: string;
+  dayLabel: string;
+  summary: string;
+  blocks: Block[];
 }
 
-function groupByDay(notifications: NotificationEvent[]) {
-  const groups = new Map<string, NotificationEvent[]>();
-  for (const notification of notifications) {
+/**
+ * Turn the flat notification log into day sections of separated, strictly
+ * time-ordered cards:
+ *  - every acquisition/tracking event becomes its own card;
+ *  - duplicate same-day events for the same (title · season · kind) collapse to
+ *    the latest one (re-running a sweep shouldn't show 校园之外 twice);
+ *  - routine "nothing changed" checks fold into a single 例行巡检 card.
+ */
+function buildDays(notifications: NotificationEvent[]): DayGroup[] {
+  const sorted = [...notifications].sort((a, b) => compareDesc(a.createdAt, b.createdAt));
+  const dayMap = new Map<string, NotificationEvent[]>();
+  for (const notification of sorted) {
     const key = dateKey(notification.createdAt);
-    const list = groups.get(key) ?? [];
+    const list = dayMap.get(key) ?? [];
     list.push(notification);
-    groups.set(key, list);
+    dayMap.set(key, list);
   }
-  return [...groups.entries()].map(([key, items]) => ({
-    dateKey: key,
-    dayLabel: dayLabel(key),
-    items,
-  }));
+
+  return [...dayMap.entries()].map(([key, items]) => {
+    const routineRaw = items.filter((item) => item.kind === "already_current");
+    const eventsRaw = items.filter((item) => item.kind !== "already_current");
+
+    // One card per show per day: the latest milestone wins regardless of kind,
+    // so "开始追踪" in the morning and "追踪完成" at night don't both show — only
+    // the freshest state of 校园之外 survives.
+    const blocks: Block[] = [];
+    const eventSubjects = new Set<string>();
+    for (const notification of eventsRaw) {
+      const subject = subjectKey(notification);
+      if (eventSubjects.has(subject)) continue; // sorted desc → first seen is latest
+      eventSubjects.add(subject);
+      blocks.push({ type: "event", id: notification.id, time: notification.createdAt, notification });
+    }
+
+    // Routine checks only cover shows that didn't already get an event card today
+    // (no point listing 抽烟 in 例行巡检 when its own card already states its state).
+    const seenRoutine = new Set<string>();
+    const routineItems: NotificationEvent[] = [];
+    for (const notification of routineRaw) {
+      const subject = subjectKey(notification);
+      if (eventSubjects.has(subject) || seenRoutine.has(subject)) continue;
+      seenRoutine.add(subject);
+      routineItems.push(notification);
+    }
+    if (routineItems.length > 0) {
+      blocks.push({ type: "routine", id: `routine_${key}`, time: routineItems[0]!.createdAt, items: routineItems });
+    }
+
+    blocks.sort((a, b) => compareDesc(a.time, b.time));
+    return {
+      dateKey: key,
+      dayLabel: dayLabel(key),
+      summary: daySummary(blocks),
+      blocks,
+    };
+  });
+}
+
+/** Identity of the show a notification is about — kind-independent, so all of a
+ *  day's events for one season collapse to its latest milestone. */
+function subjectKey(notification: NotificationEvent): string {
+  const name = notification.report?.titleName ?? notification.title;
+  const season = notification.report?.seasonLabel ?? "";
+  return `${name}|${season}`;
+}
+
+function compareDesc(a: string, b: string): number {
+  return a < b ? 1 : a > b ? -1 : 0;
 }
 
 function dateKey(iso: string): string {
@@ -320,12 +348,16 @@ function timeLabel(iso: string): string {
   });
 }
 
-function daySummary(items: NotificationEvent[]): string {
-  const newly = items.reduce((sum, item) => sum + (item.report?.newlyObtained.length ?? 0), 0);
-  const noCoverage = items.filter((item) => item.kind === "no_coverage").length;
-  const parts = [`${items.length} 条记录`];
+function daySummary(blocks: Block[]): string {
+  const eventBlocks = blocks.filter((block): block is Extract<Block, { type: "event" }> => block.type === "event");
+  const newly = eventBlocks.reduce((sum, block) => sum + (block.notification.report?.newlyObtained.length ?? 0), 0);
+  const noCoverage = eventBlocks.filter((block) => block.notification.kind === "no_coverage").length;
+  const routine = blocks.find((block): block is Extract<Block, { type: "routine" }> => block.type === "routine");
+
+  const parts: string[] = [`${eventBlocks.length} 项更新`];
   if (newly > 0) parts.push(`${newly} 集新增`);
   if (noCoverage > 0) parts.push(`${noCoverage} 项暂无资源`);
+  if (routine) parts.push(`巡检 ${routine.items.length} 部`);
   return parts.join(" · ");
 }
 
