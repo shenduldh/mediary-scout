@@ -23,7 +23,7 @@ import {
 import {
   buildSeasonReport,
   buildSeriesReport,
-  dominantQuality,
+  dominantQualityOfFiles,
   formatReportPushText,
 } from "./notification-report.js";
 import {
@@ -166,7 +166,7 @@ export async function runType2Initialization(input: {
     missingBefore: missingEpisodes,
     stillMissingAfter: actionableMissingEpisodes(reconciledEpisodes),
   });
-  const initQuality = dominantQuality(verifiedFiles.map((file) => file.name));
+  const initQuality = dominantQualityOfFiles(verifiedFiles);
   const report = buildSeasonReport({
     titleName: input.title.title,
     season,
@@ -289,7 +289,7 @@ export async function runType3Monitoring(input: {
   const missingBefore = actionableMissingEpisodes(episodes);
 
   if (missingBefore.length === 0) {
-    const noopQuality = dominantQuality(currentFiles.map((file) => file.name));
+    const noopQuality = dominantQualityOfFiles(currentFiles);
     const report = buildSeasonReport({
       titleName: input.title.title,
       season: input.season,
@@ -384,7 +384,7 @@ export async function runType3Monitoring(input: {
   const missingBeforeCodes = new Set(missingBefore);
   const newlyObtained = episodes.filter((ep) => ep.obtained && missingBeforeCodes.has(ep.episodeCode));
   const status = resolveAcquisitionStatus({ missingBefore, stillMissingAfter });
-  const sweepQuality = dominantQuality(finalFiles.map((file) => file.name));
+  const sweepQuality = dominantQualityOfFiles(finalFiles);
   const report = buildSeasonReport({
     titleName: input.title.title,
     season: input.season,

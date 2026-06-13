@@ -9,14 +9,7 @@ import {
   type RequestTrackingActionResult,
 } from "../app/actions";
 import { useAcquisitionLock } from "./acquisition-lock";
-
-function isLockedResult(result: RequestTrackingActionResult | null): boolean {
-  return (
-    result?.status === "requested" ||
-    result?.status === "already_tracked" ||
-    result?.status === "active_workflow"
-  );
-}
+import { isLockedResult } from "./request-state";
 
 export function RequestSeasonButton({
   tmdbId,

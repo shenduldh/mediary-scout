@@ -7,6 +7,7 @@ import {
   requestSeasonAction,
   type RequestTrackingActionResult,
 } from "../app/actions";
+import { isLockedResult, RequestedBadge } from "./request-state";
 
 /**
  * Two-step acquisition entry for a tv title: the dropdown only SELECTS a
@@ -30,18 +31,9 @@ export function SeasonRequestMenu({
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<number | "all">("all");
   const [result, setResult] = useState<RequestTrackingActionResult | null>(null);
-  const isLocked =
-    result?.status === "requested" ||
-    result?.status === "already_tracked" ||
-    result?.status === "active_workflow";
 
-  if (isLocked) {
-    return (
-      <span className="hub-badge tone-green" title={result?.message}>
-        <LoaderCircle size={12} className="spin" aria-hidden />
-        已请求
-      </span>
-    );
+  if (isLockedResult(result)) {
+    return <RequestedBadge title={result?.message} />;
   }
 
   const submit = () => {

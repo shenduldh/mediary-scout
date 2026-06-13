@@ -3,14 +3,12 @@
 import { Layers, LoaderCircle } from "lucide-react";
 import { useState, useTransition } from "react";
 import { requestSeriesAction, type RequestTrackingActionResult } from "../app/actions";
+import { isLockedResult } from "./request-state";
 
 export function RequestSeriesButton({ candidateId }: { candidateId: string }) {
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<RequestTrackingActionResult | null>(null);
-  const isLocked =
-    result?.status === "requested" ||
-    result?.status === "already_tracked" ||
-    result?.status === "active_workflow";
+  const isLocked = isLockedResult(result);
 
   return (
     <button

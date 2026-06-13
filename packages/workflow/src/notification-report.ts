@@ -1,3 +1,4 @@
+import { episodeNumberFromCode } from "./domain.js";
 import type {
   EpisodeState,
   NotificationEvent,
@@ -39,11 +40,6 @@ function formatSeasonRange(seasons: number[]): string {
   return groups.join("、");
 }
 
-function episodeNumberOf(code: string): number {
-  const match = /E(\d+)/i.exec(code);
-  return match ? Number(match[1]) : 0;
-}
-
 interface SeasonFacts {
   realMissing: string[]; // aired-but-not-obtained, short codes
   seasonFinished: boolean;
@@ -60,7 +56,10 @@ function seasonFacts(season: TrackedSeason, episodes: EpisodeState[]): SeasonFac
   const obtained = episodes.filter((episode) => episode.obtained);
   const seasonFinished = season.latestAiredEpisode >= season.totalEpisodes;
   const fullyObtained = seasonFinished && realMissing.length === 0 && obtained.length >= season.totalEpisodes;
-  const maxObtainedEpisode = obtained.reduce((max, episode) => Math.max(max, episodeNumberOf(episode.episodeCode)), 0);
+  const maxObtainedEpisode = obtained.reduce(
+    (max, episode) => Math.max(max, episodeNumberFromCode(episode.episodeCode)),
+    0,
+  );
   const providerAhead = maxObtainedEpisode > season.latestAiredEpisode;
   return { realMissing, seasonFinished, fullyObtained, maxObtainedEpisode, providerAhead };
 }
@@ -267,6 +266,12 @@ export function dominantQuality(fileNames: string[]): string | undefined {
     }
   }
   return undefined;
+}
+
+/** {@link dominantQuality} over file records — the common workflow case, so the
+ *  callers don't each repeat `files.map((f) => f.name)`. */
+export function dominantQualityOfFiles(files: { name: string }[]): string | undefined {
+  return dominantQuality(files.map((file) => file.name));
 }
 
 /**

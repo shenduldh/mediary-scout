@@ -4,6 +4,7 @@ import { Check, LoaderCircle, Plus } from "lucide-react";
 import { useState, useTransition } from "react";
 import { requestTrackingAction, type RequestTrackingActionResult } from "../app/actions";
 import type { SearchActionState } from "@media-track/workflow";
+import { RequestedBadge } from "./request-state";
 
 /**
  * Acquire control for a movie candidate. Three visual states, kept consistent
@@ -36,12 +37,7 @@ export function RequestTrackButton({
     (disabled || actionState === "already_tracked" || result?.status === "already_tracked");
 
   if (inProgress) {
-    return (
-      <span className="hub-badge tone-green" title={result?.message}>
-        <LoaderCircle size={12} className="spin" aria-hidden />
-        已请求
-      </span>
-    );
+    return <RequestedBadge title={result?.message} />;
   }
 
   if (settled) {
