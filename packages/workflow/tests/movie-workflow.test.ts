@@ -72,6 +72,47 @@ describe("runMovieAcquisition", () => {
     expect(landed.map((f) => f.name)).toContain("奥本海默 (2023).mkv");
   });
 
+  it("retries the next-best candidate after a transfer fails to materialize", async () => {
+    const title = movieTitle();
+    // Only the second candidate (pass 2's snapshot) has a healthy outcome; the
+    // first selection materializes nothing (unconfigured → failed transfer).
+    const storage = new FakeStorageExecutor({
+      transferOutcomes: {
+        snapshot_2_candidate_2: {
+          status: "succeeded",
+          providerMessage: "",
+          files: [videoFile("good_v", "Oppenheimer.2023.2160p.mkv")],
+        },
+      },
+    });
+
+    const result = await runMovieAcquisition({
+      title,
+      keyword: "奥本海默 4K",
+      resourceProvider: new FakeResourceProvider({
+        keywordResults: {
+          "奥本海默 4K": [
+            { title: "奥本海默 旧分享(已过期)", episodeHints: [] },
+            { title: "奥本海默 4K 好货", episodeHints: [] },
+          ],
+        },
+      }),
+      storage,
+      agents: new FakeAgentNodes(),
+      workflowRunId: "run_movie_retry",
+      stagingParentDirectoryId: "movies_root",
+      moviesParentDirectoryId: "movies_root",
+      now: fixedNow,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(result.episodes[0]?.obtained).toBe(true);
+    // It did not give up after the first failed transfer.
+    expect(result.transferAttempts.length).toBeGreaterThanOrEqual(2);
+    const landed = await storage.listVideoFiles(result.season.storageDirectoryId);
+    expect(landed.map((f) => f.name)).toContain("奥本海默 (2023).mkv");
+  });
+
   it("returns no_coverage honestly when nothing matches", async () => {
     const result = await runMovieAcquisition({
       title: movieTitle(),
