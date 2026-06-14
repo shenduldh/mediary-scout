@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  convergeMovieDirectory,
   FakeAgentNodes,
   FakeResourceProvider,
   FakeStorageExecutor,
@@ -7,6 +8,62 @@ import {
   type MediaTitle,
   type VerifiedFile,
 } from "../src/index.js";
+
+describe("convergeMovieDirectory", () => {
+  function vf(id: string, name: string, sizeBytes: number): VerifiedFile {
+    return { id, storageDirectoryId: "movie_dir", name, sizeBytes, episodeCode: null, providerFileId: id };
+  }
+
+  it("keeps the agent's best-quality master and deletes the rest (the 别留多份 safety net)", async () => {
+    const storage = new FakeStorageExecutor({
+      directories: {
+        movie_dir: [vf("hd", "Movie.2023.1080p.mkv", 6_000_000_000), vf("uhd", "Movie.2023.2160p.mkv", 16_000_000_000)],
+      },
+    });
+    const agents = new FakeAgentNodes({ movieMasterKeepFileId: "uhd" });
+
+    const result = await convergeMovieDirectory({
+      storage,
+      agents,
+      movieDirectoryId: "movie_dir",
+      title: "Movie",
+      year: 2023,
+    });
+
+    expect(result.kept).toBe("uhd");
+    expect(result.deleted).toEqual(["hd"]);
+    const remaining = await storage.listVideoFiles("movie_dir");
+    expect(remaining.map((file) => file.name)).toEqual(["Movie.2023.2160p.mkv"]);
+  });
+
+  it("is a no-op (no agent call) when the directory already holds a single master", async () => {
+    const storage = new FakeStorageExecutor({ directories: { movie_dir: [vf("only", "Movie.2023.2160p.mkv", 16_000_000_000)] } });
+    const agents = new FakeAgentNodes();
+    agents.selectMovieMasterFile = async () => {
+      throw new Error("selectMovieMasterFile must not be called for a single file");
+    };
+
+    const result = await convergeMovieDirectory({ storage, agents, movieDirectoryId: "movie_dir", title: "Movie", year: 2023 });
+
+    expect(result).toEqual({ kept: "only", deleted: [] });
+  });
+
+  it("deletes nothing (fail-safe) when the agent cannot pick a valid master", async () => {
+    const storage = new FakeStorageExecutor({
+      directories: {
+        movie_dir: [vf("a", "Movie.2023.2160p.mkv", 16_000_000_000), vf("b", "Movie.2023.1080p.mkv", 6_000_000_000)],
+      },
+    });
+    const agents = new FakeAgentNodes();
+    agents.selectMovieMasterFile = async () => ({ node: "fake", keepFileId: "ghost", reason: "hallucinated" });
+
+    const result = await convergeMovieDirectory({ storage, agents, movieDirectoryId: "movie_dir", title: "Movie", year: 2023 });
+
+    expect(result.deleted).toEqual([]);
+    const remaining = await storage.listVideoFiles("movie_dir");
+    expect(remaining.length).toBe(2); // nothing deleted on agent uncertainty
+  });
+});
 
 const fixedNow = () => "2026-06-13T00:00:00.000Z";
 

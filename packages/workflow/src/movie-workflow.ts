@@ -285,6 +285,24 @@ export async function runMovieAcquisition(input: {
         data: { keepFileId: master.providerFileId, deletedFileIds: extras, reason: masterReason },
       });
     }
+    // Safety net for the "别留多份" rule: the landing dir is idempotent, so a
+    // prior master (e.g. a manual re-run that bypassed the search gate) could
+    // accumulate alongside this one. Converge to a single best-quality master —
+    // the agent picks, never size.
+    const converged = await convergeMovieDirectory({
+      storage: input.storage,
+      agents: input.agents,
+      movieDirectoryId: imported.movieDirectoryId,
+      title: input.title.title,
+      year: input.title.year,
+    });
+    if (converged.deleted.length > 0) {
+      auditEvents.push({
+        type: "movie_directory_converged",
+        message: `Converged landing dir to one master; deleted ${converged.deleted.length} stale duplicate(s)`,
+        data: { keepFileId: converged.kept, deletedFileIds: converged.deleted },
+      });
+    }
     auditEvents.push({
       type: "movie_landed",
       message: `${input.title.title} (${input.title.year}) landed`,
@@ -312,4 +330,54 @@ export async function runMovieAcquisition(input: {
     reportStatus: "no_coverage",
     reportLines: ["资源转存均未落地 · 将持续尝试"],
   });
+}
+
+/**
+ * Converge a movie's landing directory to a SINGLE best-quality master. The
+ * search-view gate normally stops a movie being re-acquired, but a manual re-run
+ * (or any future path) can import a second master into the idempotent
+ * `Movies/Title (Year)/` dir, leaving 多份. This is the safety net for the
+ * "别留多份" rule: when more than one video is present, the AGENT picks the keeper
+ * (best quality) and the rest are deleted. Agent uncertainty (an unstaged id,
+ * even after a re-ask) deletes NOTHING — never guess by size.
+ */
+export async function convergeMovieDirectory(input: {
+  storage: StorageExecutor;
+  agents: AgentNodes;
+  movieDirectoryId: string;
+  title: string;
+  year: number;
+}): Promise<{ kept: string | null; deleted: string[] }> {
+  const videos = await input.storage.listVideoFiles(input.movieDirectoryId);
+  if (videos.length <= 1) {
+    return { kept: videos[0]?.providerFileId ?? null, deleted: [] };
+  }
+  const candidates = videos.map((video) => ({
+    providerFileId: video.providerFileId,
+    name: video.name,
+    sizeBytes: video.sizeBytes,
+  }));
+  let selection = await input.agents.selectMovieMasterFile({ title: input.title, year: input.year, candidates });
+  let keep = videos.find((video) => video.providerFileId === selection.keepFileId);
+  if (!keep) {
+    selection = await input.agents.selectMovieMasterFile({
+      title: input.title,
+      year: input.year,
+      candidates,
+      rejectedFileId: selection.keepFileId,
+    });
+    keep = videos.find((video) => video.providerFileId === selection.keepFileId);
+  }
+  if (!keep) {
+    // Agent could not pick even after the re-ask — never guess by size; keep all.
+    return { kept: null, deleted: [] };
+  }
+  const keeper = keep;
+  const extras = videos
+    .filter((video) => video.providerFileId !== keeper.providerFileId)
+    .map((video) => video.providerFileId);
+  if (extras.length > 0) {
+    await input.storage.deleteFiles({ directoryId: input.movieDirectoryId, fileIds: extras });
+  }
+  return { kept: keeper.providerFileId, deleted: extras };
 }
