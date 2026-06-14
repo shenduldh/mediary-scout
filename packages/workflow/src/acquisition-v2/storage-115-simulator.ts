@@ -43,7 +43,17 @@ interface File {
 
 const VIDEO_EXTENSIONS = /\.(mkv|mp4|avi|ts|m2ts|mov|flv|wmv)$/i;
 
-export class Storage115Simulator {
+/** The storage surface the sandbox depends on — the simulator and the real 115
+ *  executor both satisfy it. */
+export interface StorageV2 {
+  createDirectory(input: { name: string; parentId: string }): Promise<string>;
+  transferCandidate(input: { candidateId: string; intoDirectoryId: string }): Promise<TransferAttemptResult>;
+  listTree(input: { directoryId: string }): Promise<SimTreeFile[]>;
+  moveFiles(input: { fileIds: string[]; targetDirectoryId: string }): Promise<{ moved: string[] }>;
+  deleteFiles(input: { fileIds: string[] }): Promise<{ deleted: string[] }>;
+}
+
+export class Storage115Simulator implements StorageV2 {
   private readonly dirs = new Map<string, Dir>();
   private readonly files = new Map<string, File>();
   private readonly packs: Map<string, PackSpec>;

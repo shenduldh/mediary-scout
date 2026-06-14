@@ -4,6 +4,7 @@ import {
   normalizeSearchKeyword,
 } from "../planning-search-gate.js";
 import type { ResourceProviderV2, ResourceSnapshotV2 } from "./fake-provider.js";
+import type { SimTreeFile, StorageV2, TransferAttemptResult } from "./storage-115-simulator.js";
 
 /**
  * The task sandbox for the Acquisition V2 rebuild — the permission cage the
@@ -18,6 +19,9 @@ export interface TaskSandboxOptions {
   provider: ResourceProviderV2;
   /** Max distinct PanSou searches per task (the system's search budget). */
   searchBudget?: number;
+  /** Scoped storage + the staging handle this task may transfer into. */
+  storage?: StorageV2;
+  stagingDirectoryId?: string;
 }
 
 export interface SearchToolResult {
@@ -29,9 +33,18 @@ export interface SearchToolResult {
   refused?: string;
 }
 
+export interface TransferToolResult {
+  attempt: TransferAttemptResult;
+  /** The TRUE staging contents after a forced reread — the only evidence the
+   *  agent should trust about what actually landed. */
+  staging: SimTreeFile[];
+}
+
 export class TaskSandbox {
   private readonly provider: ResourceProviderV2;
   private readonly searchBudget: number;
+  private readonly storage: StorageV2 | undefined;
+  private readonly stagingDirectoryId: string | undefined;
   private readonly seenKeywords = new Set<string>();
   private readonly snapshotByKeyword = new Map<string, ResourceSnapshotV2>();
   private readonly observedSnapshots = new Map<string, ResourceSnapshotV2>();
@@ -39,6 +52,8 @@ export class TaskSandbox {
   constructor(options: TaskSandboxOptions) {
     this.provider = options.provider;
     this.searchBudget = options.searchBudget ?? MAX_DISTINCT_PLANNING_SEARCHES;
+    this.storage = options.storage;
+    this.stagingDirectoryId = options.stagingDirectoryId;
   }
 
   /** Search one keyword. Repeats are deduped (no extra provider hit); distinct
@@ -71,5 +86,28 @@ export class TaskSandbox {
    *  snapshot-bound transfers (no acting on stale/unseen ids). */
   hasObservedSnapshot(snapshotId: string): boolean {
     return this.observedSnapshots.has(snapshotId);
+  }
+
+  /** Transfer ONE candidate into the task's staging handle, then force-reread
+   *  staging and return the TRUE contents. The candidate must come from a
+   *  snapshot observed in THIS task (no stale/raw ids) — the agent can never
+   *  transfer-and-run; the real landing is handed back for it to judge. */
+  async transferCandidate(input: { snapshotId: string; candidateId: string }): Promise<TransferToolResult> {
+    if (!this.storage || !this.stagingDirectoryId) {
+      throw new Error("SANDBOX: no storage/staging handle configured for transfers");
+    }
+    const snapshot = this.observedSnapshots.get(input.snapshotId);
+    if (!snapshot) {
+      throw new Error(`SANDBOX_SNAPSHOT_NOT_OBSERVED: ${input.snapshotId} was not seen in this task`);
+    }
+    if (!snapshot.candidates.some((candidate) => candidate.id === input.candidateId)) {
+      throw new Error(`SANDBOX_CANDIDATE_NOT_IN_SNAPSHOT: ${input.candidateId} is not in ${input.snapshotId}`);
+    }
+    const attempt = await this.storage.transferCandidate({
+      candidateId: input.candidateId,
+      intoDirectoryId: this.stagingDirectoryId,
+    });
+    const staging = await this.storage.listTree({ directoryId: this.stagingDirectoryId });
+    return { attempt, staging };
   }
 }
