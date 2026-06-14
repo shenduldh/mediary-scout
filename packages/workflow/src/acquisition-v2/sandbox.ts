@@ -22,11 +22,19 @@ export interface TaskSandboxOptions {
   /** Scoped storage + the staging handle this task may transfer into. */
   storage?: StorageV2;
   stagingDirectoryId?: string;
-  /** The scoped Season N directory this task may move target files into. */
+  /** TV/anime: season number -> scoped Season directory. A multi-season / complete-
+   *  series pack's files are distributed across these per season (§2 targetSeasons +
+   *  moveToSeason(fileIds, season); architecture §Multi-season; permission-audit 105/209). */
+  targetSeasonDirectoryIds?: Record<number, string>;
+  /** Movie: the single scoped movie directory (§2 targetMovieDir). */
+  targetMovieDirectoryId?: string;
+  /** Back-compat single-season handle: a task whose need is one season may pass
+   *  this instead of the map; moveToSeason then defaults to it. */
   targetSeasonDirectoryId?: string;
-  /** What this task must cover: episode codes for TV, or e.g. ["MOVIE"] for a
-   *  film. Coverage is met when every token has a markObtained-confirmed entry.
-   *  Drives the §3 "no more side effects once satisfied" gate. */
+  /** Coverage need: the missing episode codes — which MAY span multiple seasons,
+   *  e.g. ["S01E13","S04E07"] — or ["MOVIE"]. Coverage is met when every token
+   *  has a markObtained-confirmed entry. Drives the §3 "no more side effects once
+   *  satisfied" gate. The need is just "what's still missing"; sync computes it. */
   need?: string[];
 }
 
@@ -51,7 +59,10 @@ export class TaskSandbox {
   private readonly searchBudget: number;
   private readonly storage: StorageV2 | undefined;
   private readonly stagingDirectoryId: string | undefined;
-  private readonly targetSeasonDirectoryId: string | undefined;
+  /** TV: season number -> scoped Season directory (multi-season distribution). */
+  private readonly seasonDirs: Map<number, string>;
+  /** A single-season or movie task's one target directory (back-compat / movie). */
+  private readonly defaultTargetDir: string | undefined;
   private readonly need: readonly string[];
   private readonly seenKeywords = new Set<string>();
   private readonly snapshotByKeyword = new Map<string, ResourceSnapshotV2>();
@@ -63,8 +74,28 @@ export class TaskSandbox {
     this.searchBudget = options.searchBudget ?? MAX_DISTINCT_PLANNING_SEARCHES;
     this.storage = options.storage;
     this.stagingDirectoryId = options.stagingDirectoryId;
-    this.targetSeasonDirectoryId = options.targetSeasonDirectoryId;
+    this.seasonDirs = new Map(
+      Object.entries(options.targetSeasonDirectoryIds ?? {}).map(([season, id]) => [Number(season), id]),
+    );
+    this.defaultTargetDir = options.targetSeasonDirectoryId ?? options.targetMovieDirectoryId;
     this.need = options.need ?? [];
+  }
+
+  /** Every scoped target directory (all seasons + the movie/default) — the union
+   *  used for presence checks and full-target inspection. */
+  private allTargetDirIds(): string[] {
+    const ids = [...this.seasonDirs.values()];
+    if (this.defaultTargetDir !== undefined) ids.push(this.defaultTargetDir);
+    return ids;
+  }
+
+  /** Resolve which scoped target directory a move/inspect/delete addresses. With an
+   *  explicit season it must be a configured season handle; without one it falls
+   *  back to the single-season/movie default (or the sole season if there is one). */
+  private resolveTargetDir(season?: number): string | undefined {
+    if (season !== undefined) return this.seasonDirs.get(season);
+    if (this.defaultTargetDir !== undefined) return this.defaultTargetDir;
+    return this.seasonDirs.size === 1 ? [...this.seasonDirs.values()][0] : undefined;
   }
 
   /** Whether every needed token has been confirmed obtained — the gate that
@@ -128,13 +159,25 @@ export class TaskSandbox {
     return this.storage.listSubdirectories({ directoryId: this.stagingDirectoryId });
   }
 
-  /** Read-only full raw tree of the scoped target (Season/movie) dir — the
-   *  ground truth for what has actually landed. */
-  async inspectTargetDir(): Promise<SimTreeFile[]> {
-    if (!this.storage || !this.targetSeasonDirectoryId) {
-      throw new Error("SANDBOX: no storage/season handle configured");
+  /** Read-only full raw tree of a scoped target directory — ground truth for what
+   *  has landed. With a season, that season's dir (so the agent sees what season N
+   *  already holds before deciding what to move/dedup); without one, the union of
+   *  all target dirs (every season + movie) for the whole picture. */
+  async inspectTargetDir(input: { season?: number } = {}): Promise<SimTreeFile[]> {
+    if (!this.storage) {
+      throw new Error("SANDBOX: no storage configured");
     }
-    return this.storage.listTree({ directoryId: this.targetSeasonDirectoryId });
+    if (input.season !== undefined) {
+      const dir = this.resolveTargetDir(input.season);
+      if (!dir) {
+        throw new Error(`SANDBOX: no target directory for season ${input.season}`);
+      }
+      return this.storage.listTree({ directoryId: dir });
+    }
+    const trees = await Promise.all(
+      this.allTargetDirIds().map((directoryId) => this.storage!.listTree({ directoryId })),
+    );
+    return trees.flat();
   }
 
   /** Transfer ONE candidate into the task's staging handle, then force-reread
@@ -165,12 +208,27 @@ export class TaskSandbox {
     return { attempt, staging };
   }
 
-  /** Move the agent-selected files out of staging into the scoped Season dir
-   *  (the 挖取/extract). Scope guard: every file must currently be in THIS
-   *  task's staging — the agent can't move arbitrary ids. Rereads both dirs. */
-  async moveToSeason(input: { fileIds: string[] }): Promise<{ season: SimTreeFile[]; staging: SimTreeFile[] }> {
-    if (!this.storage || !this.stagingDirectoryId || !this.targetSeasonDirectoryId) {
-      throw new Error("SANDBOX: no storage/staging/season handle configured");
+  /** Move the agent-selected files out of staging into the scoped Season dir for
+   *  the given season (the 挖取/extract). A multi-season / complete-series pack is
+   *  distributed by calling this once per season with that season's files — the
+   *  agent judges which file is which season/episode and only moves what's still
+   *  missing (already-present seasons are NOT recopied). `season` is required when
+   *  the task spans multiple seasons; a single-season/movie task may omit it.
+   *  Scope guard: every file must currently be in THIS task's staging. Rereads. */
+  async moveToSeason(input: {
+    fileIds: string[];
+    season?: number;
+  }): Promise<{ season: SimTreeFile[]; staging: SimTreeFile[] }> {
+    if (!this.storage || !this.stagingDirectoryId) {
+      throw new Error("SANDBOX: no storage/staging handle configured");
+    }
+    const targetDir = this.resolveTargetDir(input.season);
+    if (!targetDir) {
+      throw new Error(
+        input.season === undefined
+          ? "SANDBOX_SEASON_REQUIRED: this task spans multiple seasons; pass the season for each move"
+          : `SANDBOX_NO_SEASON_DIR: no scoped directory for season ${input.season}`,
+      );
     }
     const stagingIds = new Set(
       (await this.storage.listTree({ directoryId: this.stagingDirectoryId })).map((file) => file.id),
@@ -179,12 +237,9 @@ export class TaskSandbox {
     if (outOfScope.length > 0) {
       throw new Error(`SANDBOX_FILES_NOT_IN_STAGING: ${outOfScope.join(",")}`);
     }
-    await this.storage.moveFiles({
-      fileIds: input.fileIds,
-      targetDirectoryId: this.targetSeasonDirectoryId,
-    });
+    await this.storage.moveFiles({ fileIds: input.fileIds, targetDirectoryId: targetDir });
     return {
-      season: await this.storage.listTree({ directoryId: this.targetSeasonDirectoryId }),
+      season: await this.storage.listTree({ directoryId: targetDir }),
       staging: await this.storage.listTree({ directoryId: this.stagingDirectoryId }),
     };
   }
@@ -194,12 +249,14 @@ export class TaskSandbox {
    *  currently be in that directory — no deleting arbitrary/raw ids. Rereads. */
   async deleteFiles(input: {
     directory: "staging" | "season";
+    season?: number;
     fileIds: string[];
   }): Promise<{ deleted: string[]; directory: SimTreeFile[] }> {
     if (!this.storage) {
       throw new Error("SANDBOX: no storage configured");
     }
-    const directoryId = input.directory === "season" ? this.targetSeasonDirectoryId : this.stagingDirectoryId;
+    const directoryId =
+      input.directory === "season" ? this.resolveTargetDir(input.season) : this.stagingDirectoryId;
     if (!directoryId) {
       throw new Error(`SANDBOX: no ${input.directory} handle configured`);
     }
@@ -221,12 +278,17 @@ export class TaskSandbox {
   async markObtained(input: {
     episodes: Array<{ code: string; fileId: string }>;
   }): Promise<{ confirmed: Array<{ code: string; fileId: string }> }> {
-    if (!this.storage || !this.targetSeasonDirectoryId) {
-      throw new Error("SANDBOX: no storage/season handle configured");
+    if (!this.storage) {
+      throw new Error("SANDBOX: no storage configured");
     }
-    const present = new Set(
-      (await this.storage.listTree({ directoryId: this.targetSeasonDirectoryId })).map((file) => file.id),
+    // Presence is checked across EVERY target directory (all seasons + movie), so a
+    // multi-season task can mark episodes that the agent moved into their own season
+    // dirs. The episode code carries the season; the file must exist somewhere in
+    // the task's target scope right now (§12 fresh-reread, no DB lying).
+    const trees = await Promise.all(
+      this.allTargetDirIds().map((directoryId) => this.storage!.listTree({ directoryId })),
     );
+    const present = new Set(trees.flat().map((file) => file.id));
     const missing = input.episodes.filter((episode) => !present.has(episode.fileId));
     if (missing.length > 0) {
       throw new Error(
