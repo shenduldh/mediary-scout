@@ -430,6 +430,7 @@ export async function runScheduledType3(options?: { force?: boolean }): Promise<
       ...(preferredLanguage === undefined ? {} : { preferredLanguage }),
       storageParentDirectoryId: storageParentDirectoryId(),
       animeStorageParentDirectoryId: animeParentDirectoryId(),
+      moviesParentDirectoryId: moviesParentDirectoryId(),
       staleActiveRunTimeoutMs: 30 * 60 * 1000,
       ...(sync ? { syncSeasonMetadata: sync } : {}),
     });

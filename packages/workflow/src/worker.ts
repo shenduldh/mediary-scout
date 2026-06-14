@@ -1,5 +1,5 @@
 import type { LanguageModel } from "ai";
-import type { MediaType, WorkflowStatus } from "./domain.js";
+import type { EpisodeState, MediaTitle, MediaType, TrackedSeason, WorkflowStatus } from "./domain.js";
 import type { ResourceProvider, StorageExecutor } from "./ports.js";
 import type { WorkflowRepository } from "./repository.js";
 import {
@@ -162,6 +162,10 @@ export async function runScheduledType3Monitoring(input: {
   /** Separate landing parent for anime, so anime patrol verify-or-creates under
    *  its own tree (see runQueuedSeriesInitialization). */
   animeStorageParentDirectoryId?: string;
+  /** Movies category parent. When set, the sweep also patrols tracked-but-
+   *  unobtained films, dispatching the MOVIE agent (by title.type) — 已上映无源
+   *  films get retried until covered. Unset → movies are left alone. */
+  moviesParentDirectoryId?: string;
   now?: () => string;
   createWorkflowRunId?: () => string;
   staleActiveRunTimeoutMs?: number;
@@ -172,6 +176,17 @@ export async function runScheduledType3Monitoring(input: {
   const trackedStates = await input.repository.listTrackedSeasonStates();
 
   for (const state of trackedStates) {
+    // Patrol dispatches by title.type: a film needs the MOVIE agent, not the
+    // TV/anime agent (different semantics). (未上映/reserved films aren't tracked
+    // yet; the air-time gate lands with that product state.)
+    if (state.title.type === "movie") {
+      const outcome = await patrolMovie({ input, state, now });
+      if (outcome) {
+        outcomes.push(outcome);
+      }
+      continue;
+    }
+
     if (state.season.status !== "active" || state.episodes.length === 0) {
       continue;
     }
@@ -290,6 +305,103 @@ export async function runScheduledType3Monitoring(input: {
   }
 
   return outcomes;
+}
+
+/**
+ * Patrol one tracked film: a 已上映无源 movie (anchor episode not obtained) is
+ * retried by the MOVIE agent. Returns null when nothing to do (already obtained,
+ * or no movies parent configured). A reservation guards against a concurrent run.
+ */
+async function patrolMovie(args: {
+  input: {
+    repository: WorkflowRepository;
+    resourceProvider: ResourceProvider;
+    storage: StorageExecutor;
+    model: LanguageModel;
+    preferredLanguage?: string;
+    moviesParentDirectoryId?: string;
+    createWorkflowRunId?: () => string;
+    staleActiveRunTimeoutMs?: number;
+  };
+  state: { title: MediaTitle; season: TrackedSeason; episodes: EpisodeState[] };
+  now: () => string;
+}): Promise<ScheduledType3Outcome | null> {
+  const { input, state, now } = args;
+  const moviesParent = input.moviesParentDirectoryId;
+  if (moviesParent === undefined) {
+    return null;
+  }
+  const obtained = state.episodes.some((episode) => episode.obtained);
+  if (obtained) {
+    return null;
+  }
+
+  const workflowRunId = input.createWorkflowRunId?.() ?? crypto.randomUUID();
+  const startedAt = now();
+  const staleActiveRunStartedBefore = staleStartedBefore(startedAt, input.staleActiveRunTimeoutMs);
+  const reservation = await input.repository.reserveWorkflowRun({
+    title: state.title,
+    season: state.season,
+    workflowRun: {
+      id: workflowRunId,
+      kind: "movie_init",
+      status: "running",
+      trackedSeasonId: state.season.id,
+      startedAt,
+      finishedAt: null,
+      auditEvents: [{ type: "movie_patrol_scheduled", message: "Scheduled movie patrol reserved" }],
+    },
+    episodes: state.episodes,
+    resourceSnapshots: [],
+    decisions: [],
+    transferAttempts: [],
+    notifications: [],
+    ...(staleActiveRunStartedBefore === null
+      ? {}
+      : { staleActiveRunStartedBefore, staleFinishedAt: startedAt }),
+  });
+  if (reservation.status !== "reserved") {
+    return { trackedSeasonId: state.season.id, status: "skipped_active" };
+  }
+
+  try {
+    const result = await runMovieAcquisitionV2AndPersist({
+      title: state.title,
+      categoryParentId: moviesParent,
+      stagingParentDirectoryId: moviesParent,
+      resourceProvider: input.resourceProvider,
+      storage: input.storage,
+      model: input.model,
+      repository: input.repository,
+      ...(input.preferredLanguage === undefined ? {} : { preferredLanguage: input.preferredLanguage }),
+      workflowRun: { id: workflowRunId, startedAt, finishedAt: now() },
+    });
+    return { trackedSeasonId: state.season.id, status: "ran", workflowRunId, workflowStatus: result.status };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Workflow failed";
+    await input.repository.saveWorkflowRunSnapshot({
+      title: state.title,
+      season: state.season,
+      workflowRun: {
+        id: workflowRunId,
+        kind: "movie_init",
+        status: "failed",
+        trackedSeasonId: state.season.id,
+        startedAt,
+        finishedAt: now(),
+        auditEvents: [
+          { type: "movie_patrol_scheduled", message: "Scheduled movie patrol reserved" },
+          { type: "workflow_failed", message: errorMessage },
+        ],
+      },
+      episodes: state.episodes,
+      resourceSnapshots: [],
+      decisions: [],
+      transferAttempts: [],
+      notifications: [],
+    });
+    return { trackedSeasonId: state.season.id, status: "failed", workflowRunId, errorMessage };
+  }
 }
 
 function staleStartedBefore(nowIso: string, timeoutMs: number | undefined): string | null {

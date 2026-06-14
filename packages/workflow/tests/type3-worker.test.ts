@@ -274,6 +274,121 @@ describe("runScheduledType3Monitoring (V2 engine)", () => {
     expect(outcomes).toEqual([{ trackedSeasonId: season.id, status: "skipped_active" }]);
   });
 
+  it("patrols a tracked-but-unobtained movie by dispatching the movie agent (by title.type)", async () => {
+    const repository = new InMemoryWorkflowRepository();
+    const movie: MediaTitle = {
+      id: "tmdb_movie_872585",
+      tmdbId: 872585,
+      type: "movie",
+      title: "奥本海默",
+      originalTitle: "Oppenheimer",
+      year: 2023,
+      aliases: ["Oppenheimer"],
+    };
+    // A movie tracked via 获取 that found no resource (已上映无源): one unobtained
+    // anchor episode, season status completed (movie convention).
+    await repository.saveWorkflowRunSnapshot({
+      title: movie,
+      season: {
+        id: `${movie.id}_movie`,
+        mediaTitleId: movie.id,
+        seasonNumber: 1,
+        status: "completed",
+        qualityPreference: "4K",
+        storageDirectoryId: "",
+        totalEpisodes: 1,
+        latestAiredEpisode: 1,
+        latestAiredSource: "manual",
+      },
+      workflowRun: {
+        id: "seed_movie",
+        kind: "movie_init",
+        status: "no_coverage",
+        trackedSeasonId: `${movie.id}_movie`,
+        startedAt: fixedNow(),
+        finishedAt: fixedNow(),
+        auditEvents: [],
+      },
+      episodes: createEpisodeStates({ trackedSeasonId: `${movie.id}_movie`, seasonNumber: 1, totalEpisodes: 1, latestAiredEpisode: 1 }),
+      resourceSnapshots: [],
+      decisions: [],
+      transferAttempts: [],
+      notifications: [],
+    });
+
+    const outcomes = await runScheduledType3Monitoring({
+      repository,
+      resourceProvider: emptyProvider(),
+      storage: new FakeStorageExecutor(),
+      model: noCoverageModel(),
+      storageParentDirectoryId: "tv_root",
+      moviesParentDirectoryId: "movies_root",
+      now: fixedNow,
+      createWorkflowRunId: () => "run_movie_patrol",
+    });
+
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]).toMatchObject({ trackedSeasonId: `${movie.id}_movie`, status: "ran", workflowRunId: "run_movie_patrol" });
+    const saved = await repository.getWorkflowRunSnapshot("run_movie_patrol");
+    expect(saved?.workflowRun.kind).toBe("movie_init");
+  });
+
+  it("does not patrol an already-obtained movie", async () => {
+    const repository = new InMemoryWorkflowRepository();
+    const movie: MediaTitle = {
+      id: "tmdb_movie_1",
+      tmdbId: 1,
+      type: "movie",
+      title: "Done Movie",
+      originalTitle: "Done Movie",
+      year: 2020,
+      aliases: [],
+    };
+    const obtainedEpisode = createEpisodeStates({ trackedSeasonId: `${movie.id}_movie`, seasonNumber: 1, totalEpisodes: 1, latestAiredEpisode: 1 }).map(
+      (episode) => ({ ...episode, obtained: true }),
+    );
+    await repository.saveWorkflowRunSnapshot({
+      title: movie,
+      season: {
+        id: `${movie.id}_movie`,
+        mediaTitleId: movie.id,
+        seasonNumber: 1,
+        status: "completed",
+        qualityPreference: "4K",
+        storageDirectoryId: "movies_root_done",
+        totalEpisodes: 1,
+        latestAiredEpisode: 1,
+        latestAiredSource: "manual",
+      },
+      workflowRun: {
+        id: "seed_done_movie",
+        kind: "movie_init",
+        status: "succeeded",
+        trackedSeasonId: `${movie.id}_movie`,
+        startedAt: fixedNow(),
+        finishedAt: fixedNow(),
+        auditEvents: [],
+      },
+      episodes: obtainedEpisode,
+      resourceSnapshots: [],
+      decisions: [],
+      transferAttempts: [],
+      notifications: [],
+    });
+
+    const outcomes = await runScheduledType3Monitoring({
+      repository,
+      resourceProvider: emptyProvider(),
+      storage: new FakeStorageExecutor(),
+      model: throwingModel(), // must not run for an already-obtained movie
+      storageParentDirectoryId: "tv_root",
+      moviesParentDirectoryId: "movies_root",
+      now: fixedNow,
+    });
+
+    expect(outcomes).toEqual([]);
+  });
+
   it("isolates one season's failure and continues with the next", async () => {
     const repository = new InMemoryWorkflowRepository();
     const broken = trackedFixture("broken");
