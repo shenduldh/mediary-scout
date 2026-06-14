@@ -115,14 +115,16 @@ async function toCandidateCard(
   candidate: MediaSearchCandidate,
   repository: WorkflowRepository,
 ): Promise<SearchCandidateCard> {
-  const selectedSeason = candidate.mediaType === "tv" ? candidate.seasons[0] : undefined;
-  const id =
-    candidate.mediaType === "tv" && selectedSeason
-      ? trackedSeasonId(candidate.tmdbId, selectedSeason.seasonNumber)
-      : mediaTitleId(candidate.mediaType, candidate.tmdbId);
-
+  // The search card is SEASON-AGNOSTIC for a TV show: it never pre-picks a
+  // season. The user chooses one (or all remaining) via SeasonRequestMenu, and
+  // that choice — not a card default — flows to the agent and the canonical
+  // `Season N` landing dir. Per-season tracked state is surfaced by the UI from
+  // listTrackedSeasonStates, so the card carries no season-specific identity,
+  // counts, or action (those were vestigial and misleading for multi-season
+  // shows). A movie is the only single-anchor case whose card-level action
+  // gates its one button.
   return {
-    id,
+    id: mediaTitleId(candidate.mediaType, candidate.tmdbId),
     tmdbId: candidate.tmdbId,
     mediaType: candidate.mediaType,
     title: candidate.title,
@@ -131,9 +133,9 @@ async function toCandidateCard(
     overview: candidate.overview,
     posterPath: candidate.posterPath,
     backdropPath: candidate.backdropPath,
-    selectedSeasonNumber: selectedSeason?.seasonNumber ?? null,
-    totalEpisodes: selectedSeason?.episodeCount ?? null,
-    latestAiredEpisode: selectedSeason?.latestAiredEpisode ?? null,
+    selectedSeasonNumber: null,
+    totalEpisodes: null,
+    latestAiredEpisode: null,
     seasonNumbers:
       candidate.mediaType === "tv"
         ? candidate.seasons.map((season) => season.seasonNumber).sort((a, b) => a - b)
@@ -143,13 +145,7 @@ async function toCandidateCard(
         ? // A movie tracks as a degenerate one-"episode" anchor season; once it
           // is acquired (or acquiring) it must NOT be re-requestable in search.
           await actionForTrackedSeason(repository, movieTrackedSeasonId(candidate.tmdbId), "movie_init")
-        : selectedSeason
-          ? await actionForTrackedSeason(
-              repository,
-              trackedSeasonId(candidate.tmdbId, selectedSeason.seasonNumber),
-              "type2_init",
-            )
-          : canRequestAction(),
+        : canRequestAction(),
   };
 }
 

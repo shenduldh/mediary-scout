@@ -45,12 +45,15 @@ describe("getSearchPageView", () => {
     expect(view.cacheStatus).toBe("miss");
     expect(view.candidates).toMatchObject([
       {
-        id: "tmdb_tv_289271_s1",
+        // The search card is season-agnostic for TV — it does NOT pre-pick a
+        // season (the user chooses via SeasonRequestMenu), so the id is the
+        // show-level title id and no season is selected.
+        id: "tmdb_tv_289271",
         tmdbId: 289271,
         mediaType: "tv",
         title: "翘楚",
         year: 2026,
-        selectedSeasonNumber: 1,
+        selectedSeasonNumber: null,
         action: {
           state: "can_request",
           label: "获取",
@@ -60,7 +63,11 @@ describe("getSearchPageView", () => {
     ]);
   });
 
-  it("marks a season as already tracked when repository has episode state", async () => {
+  it("keeps the TV card season-agnostic even when a season is already tracked", async () => {
+    // Per-season tracked state for a TV show is surfaced by the UI's
+    // SeasonRequestMenu / trackedLabel (built from listTrackedSeasonStates),
+    // NOT by a card-level action. So the card must NOT collapse a multi-season
+    // show into season 1's tracked state — it stays requestable & seasonless.
     const repository = new InMemoryWorkflowRepository();
     const { title, season } = trackedFixture();
     await repository.saveWorkflowRunSnapshot({
@@ -86,10 +93,11 @@ describe("getSearchPageView", () => {
       repository,
     });
 
+    expect(view.candidates[0]?.mediaType).toBe("tv");
+    expect(view.candidates[0]?.selectedSeasonNumber).toBeNull();
     expect(view.candidates[0]?.action).toMatchObject({
-      state: "already_tracked",
-      label: "已追踪",
-      disabled: true,
+      state: "can_request",
+      disabled: false,
     });
   });
 
@@ -156,7 +164,10 @@ describe("getSearchPageView", () => {
     });
   });
 
-  it("returns active workflow state before allowing duplicate requests", async () => {
+  it("keeps the TV card season-agnostic even while a season's workflow is running", async () => {
+    // A TV season mid-acquisition is already tracked, so the UI drops it from
+    // untrackedSeasons and surfaces it via trackedLabel — the duplicate-request
+    // guard for TV does not live in a card-level action.
     const repository = new InMemoryWorkflowRepository();
     const { title, season } = trackedFixture();
     await repository.saveWorkflowRunSnapshot({
@@ -177,11 +188,75 @@ describe("getSearchPageView", () => {
       repository,
     });
 
+    expect(view.candidates[0]?.action).toMatchObject({ state: "can_request", disabled: false });
+  });
+
+  it("gates a MOVIE card on its active workflow (card-level action is the movie's button)", async () => {
+    // Movies are the single-anchor case whose card-level action actually drives
+    // the one acquire button — so an in-flight movie must read as 获取中.
+    const repository = new InMemoryWorkflowRepository();
+    const title: MediaTitle = {
+      id: "tmdb_movie_872585",
+      tmdbId: 872585,
+      type: "movie",
+      title: "奥本海默",
+      originalTitle: "Oppenheimer",
+      year: 2023,
+      aliases: [],
+    };
+    const season: TrackedSeason = {
+      id: "tmdb_movie_872585_movie",
+      mediaTitleId: title.id,
+      seasonNumber: 1,
+      status: "active",
+      qualityPreference: "4K",
+      storageDirectoryId: "",
+      totalEpisodes: 1,
+      latestAiredEpisode: 1,
+      latestAiredSource: "metadata",
+    };
+    await repository.saveWorkflowRunSnapshot({
+      title,
+      season,
+      workflowRun: {
+        id: "run_movie_active",
+        kind: "movie_init",
+        status: "running",
+        trackedSeasonId: season.id,
+        startedAt: "2026-06-12T00:00:00.000Z",
+        finishedAt: null,
+        auditEvents: [],
+      },
+      episodes: [],
+      resourceSnapshots: [],
+      decisions: [],
+      transferAttempts: [],
+      notifications: [],
+    });
+
+    const view = await getSearchPageView({
+      query: "奥本海默",
+      provider: countingSearchProvider([
+        {
+          tmdbId: 872585,
+          mediaType: "movie",
+          title: "奥本海默",
+          originalTitle: "Oppenheimer",
+          year: 2023,
+          overview: "",
+          posterPath: null,
+          backdropPath: null,
+          seasons: [],
+        },
+      ]),
+      cache: new InMemoryMediaSearchCache(),
+      repository,
+    });
+
     expect(view.candidates[0]?.action).toMatchObject({
       state: "active_workflow",
-      label: "获取中",
       disabled: true,
-      workflowRunId: "run_qiaochu",
+      workflowRunId: "run_movie_active",
     });
   });
 
