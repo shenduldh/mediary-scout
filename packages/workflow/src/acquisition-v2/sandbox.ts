@@ -92,6 +92,25 @@ export class TaskSandbox {
     return this.observedSnapshots.has(snapshotId);
   }
 
+  /** Read-only full raw tree of THIS task's staging handle — the agent's
+   *  "看现场" surface. Returns everything (no top-N slicing, §11) so the agent
+   *  judges identity/dupes/extras from real files, not a summary. */
+  async inspectStaging(): Promise<SimTreeFile[]> {
+    if (!this.storage || !this.stagingDirectoryId) {
+      throw new Error("SANDBOX: no storage/staging handle configured");
+    }
+    return this.storage.listTree({ directoryId: this.stagingDirectoryId });
+  }
+
+  /** Read-only full raw tree of the scoped target (Season/movie) dir — the
+   *  ground truth for what has actually landed. */
+  async inspectTargetDir(): Promise<SimTreeFile[]> {
+    if (!this.storage || !this.targetSeasonDirectoryId) {
+      throw new Error("SANDBOX: no storage/season handle configured");
+    }
+    return this.storage.listTree({ directoryId: this.targetSeasonDirectoryId });
+  }
+
   /** Transfer ONE candidate into the task's staging handle, then force-reread
    *  staging and return the TRUE contents. The candidate must come from a
    *  snapshot observed in THIS task (no stale/raw ids) — the agent can never
