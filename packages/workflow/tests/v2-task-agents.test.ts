@@ -63,6 +63,9 @@ describe("TV/anime system prompt carries the 字字泣血 invariants", () => {
     [/exists? (right )?now|present.*now|before you mark|only mark/i, "mark only when file present now"],
     [/stop|no (more|further).*(transfer|side effect)|once cover/i, "stop once coverage met"],
     [/do not rename|never rename|keep.*original name/i, "no renaming"],
+    [/multi-season|complete-series|distribute.*season|moveToSeason\(fileIds, season\)/i, "multi-season pack distribution"],
+    [/not recopied|already has|never recopy|leave the rest/i, "already-covered seasons not recopied"],
+    [/unaired.*not missing|daily patrol|leave that gap|never fabricate/i, "ongoing/unobtainable honesty"],
   ])("mentions %s (%s)", (re) => {
     expect(prompt).toMatch(re);
   });

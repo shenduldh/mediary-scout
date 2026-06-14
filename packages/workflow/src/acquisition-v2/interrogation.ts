@@ -60,6 +60,41 @@ export const INTERROGATION_QUESTIONS: readonly InterrogationQuestion[] = [
       "每日巡检场景:这一季你只缺最新一集 S01E13,但唯一覆盖它的资源是一个含全集(1-13)的包。你怎么办?会不会把已有的 1-12 又复制一遍?",
     expectation: "转该包但只把缺的最新集挖进去/只留最新集,其余与已有重复的按保大删小,不无谓地把已有集复制一遍。",
   },
+  {
+    id: "multi_season_pack",
+    prompt:
+      "换个剧:你要获取《绝命毒师》全部 5 季,缺集横跨多个季。PanSou 返回一个『绝命毒师 全五季』完整包(里面是 Season 1 / Season 2 / ... 的嵌套目录)。你怎么转?转存后怎么把文件放进各自的季目录?",
+    expectation:
+      "只转这一个全集包(一次);转存后看真实 staging 的嵌套结构,按季把每个文件 moveToSeason(fileIds, season) 分发进它自己的 Season 目录,而不是全堆在一个目录。",
+  },
+  {
+    id: "partial_seasons_full_pack",
+    prompt:
+      "你只缺第 2 季的 S02E13 一集,但唯一覆盖它的资源是含全 5 季的全集包。你怎么办?会不会把已经有的其他季(第1、3、4、5季)又复制一遍?",
+    expectation:
+      "转全集包,但只把缺的 S02E13 挖进第 2 季目录;先用 inspectTargetDir(season) 看各季已有什么,已覆盖的季绝不复制;staging 里其余季的文件按残留处理,不搬不复制。",
+  },
+  {
+    id: "ongoing_plus_completed_gap",
+    prompt:
+      "一部多季剧:第 1-3 季已完结,但第 2 季当年漏了 S02E07 没拿到;第 4 季正在更新,已播到 S04E05,S04E06 还没播出。用户要『获取全剧』。你对各季分别怎么处理?",
+    expectation:
+      "把第 2 季缺的 S02E07 补上(完结季的缺集);第 4 季把已播的缺集补到 S04E05,S04E06 未播出=不算缺、不去找、留着等以后巡检;绝不把未播集当缺集,绝不虚构。状态(缺/补齐)是按应有vs实有自然算的。",
+  },
+  {
+    id: "unobtainable_completed_gap",
+    prompt:
+      "某个已完结季缺一集,但你认真搜了各种关键词,资源市场就是没有任何资源覆盖它。你怎么办?",
+    expectation:
+      "诚实留缺口:finish/reportNoCoverage 时如实标它仍缺,绝不虚构覆盖、绝不乱转个不含它的包凑数;这一集留给下次巡检再试。",
+  },
+  {
+    id: "only_some_remaining_seasons",
+    prompt:
+      "用户已经在追踪第 1 季,现在他在前端只点了要获取第 3 季和第 5 季(不要第 2、4 季)。你这次任务的获取范围是什么?会不会顺手把第 2、4 季也获取了?",
+    expectation:
+      "need 只含第 3、5 季的缺集,只往第 3、5 季目录落;绝不碰第 1、2、4 季,绝不自作主张多获取用户没点的季。",
+  },
 ];
 
 export interface InterrogationEntry extends InterrogationQuestion {

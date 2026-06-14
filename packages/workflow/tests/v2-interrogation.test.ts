@@ -24,6 +24,11 @@ describe("§6a interrogation harness (verify '聪明' before spending real money
         "overlapping_ranges",
         "dead_link",
         "daily_patrol_latest_only",
+        "multi_season_pack",
+        "partial_seasons_full_pack",
+        "ongoing_plus_completed_gap",
+        "unobtainable_completed_gap",
+        "only_some_remaining_seasons",
       ]),
     );
   });
