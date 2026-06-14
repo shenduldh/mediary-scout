@@ -107,7 +107,8 @@ export async function getTitleHubView(tmdbId: number): Promise<TitleHubView | nu
   const repository = getWorkflowRepository();
   await ensureDemoSeeded(repository);
   const trackedStates = (await repository.listTrackedSeasonStates()).filter(
-    (state) => state.title.tmdbId === tmdbId && state.title.type === "tv",
+    // tv AND anime are season-shaped detail pages; only movies are excluded.
+    (state) => state.title.tmdbId === tmdbId && state.title.type !== "movie",
   );
   const target = await seriesTargetFor(tmdbId);
   if (trackedStates.length === 0 && target === null) {
@@ -219,7 +220,7 @@ export async function queueRemainingSeasons(
   }
   const trackedSeasonNumbers = new Set(
     (await repository.listTrackedSeasonStates())
-      .filter((state) => state.title.tmdbId === tmdbId && state.title.type === "tv")
+      .filter((state) => state.title.tmdbId === tmdbId && state.title.type !== "movie")
       .map((state) => state.season.seasonNumber),
   );
   const remaining = target.seasons.filter(

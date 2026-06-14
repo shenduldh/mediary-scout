@@ -19,11 +19,16 @@ import { isLockedResult, RequestedBadge } from "./request-state";
 export function SeasonRequestMenu({
   tmdbId,
   seasonNumbers,
+  totalSeasonCount,
   allLabel = "获取所有季",
 }: {
   tmdbId: number;
   /** Seasons still available to request (untracked only). */
   seasonNumbers: number[];
+  /** Total seasons the show has — distinguishes a fresh single-season show
+   *  (just "获取") from the last remaining season of a multi-season show
+   *  ("获取第 N 季"). */
+  totalSeasonCount: number;
   /** Pill label for the all-remaining scope. */
   allLabel?: string;
 }) {
@@ -49,6 +54,10 @@ export function SeasonRequestMenu({
 
   if (seasonNumbers.length <= 1) {
     const onlySeason = seasonNumbers[0] ?? 1;
+    // A show with only one season → plain "获取". One season left over from a
+    // multi-season show (the others already tracked) → name it, so it's not an
+    // ambiguous bare "获取" sitting next to "第 1 季已获取".
+    const isRemainingOfMany = totalSeasonCount > 1;
     return (
       <button
         className="primary-button"
@@ -61,7 +70,7 @@ export function SeasonRequestMenu({
         }}
       >
         {isPending ? <LoaderCircle size={14} className="spin" aria-hidden /> : <Plus size={14} aria-hidden />}
-        获取
+        {isRemainingOfMany ? `获取第 ${onlySeason} 季` : "获取"}
       </button>
     );
   }

@@ -260,6 +260,46 @@ describe("TmdbSearchProvider", () => {
     ]);
   });
 
+  it("excludes announced-but-empty seasons (episode_count 0) from a search candidate", async () => {
+    // Bug: the card showed 孤独摇滚 as 共 2 季 (offering an announced Season 2 with
+    // no episodes), while the detail page showed 1. A season with no episodes is
+    // only ever no_coverage — it must not be offered until it actually has them.
+    const provider = new TmdbSearchProvider({
+      readToken: "token",
+      baseURL: "https://tmdb.test/3",
+      fetchJson: async (url) => {
+        if (url.includes("/search/multi?")) {
+          return {
+            results: [
+              { id: 119100, media_type: "tv", name: "孤独摇滚", original_name: "ぼっち・ざ・ろっく！", first_air_date: "2022-10-08", overview: "" },
+            ],
+          };
+        }
+        if (url.includes("/tv/119100?")) {
+          return {
+            id: 119100,
+            name: "孤独摇滚",
+            original_name: "ぼっち・ざ・ろっく！",
+            first_air_date: "2022-10-08",
+            last_episode_to_air: { season_number: 1, episode_number: 12 },
+            seasons: [
+              { season_number: 0, episode_count: 5 },
+              { season_number: 1, episode_count: 12 },
+              { season_number: 2, episode_count: 0 },
+            ],
+          };
+        }
+        throw new Error(`Unexpected URL ${url}`);
+      },
+    });
+
+    const [candidate] = await provider.searchMedia({ query: "孤独摇滚" });
+
+    // Only the real, non-empty season 1 survives — not specials (0) nor the
+    // empty season 2.
+    expect(candidate?.seasons.map((season) => season.seasonNumber)).toEqual([1]);
+  });
+
   it("classifies a Japanese animation as anime while keeping the tmdb_tv id for routing", async () => {
     const provider = new TmdbMetadataProvider({
       readToken: "token",

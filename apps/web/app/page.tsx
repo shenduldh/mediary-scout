@@ -75,7 +75,11 @@ async function SearchResults({ query }: { query: string }) {
   await ensureDemoSeeded(repository);
   const trackedByTmdbId = new Map<number, TrackedSeasonState[]>();
   for (const state of await repository.listTrackedSeasonStates()) {
-    if (state.title.type !== "tv") {
+    // Season-awareness covers anything tracked with seasons — TV AND anime
+    // (anime is a TV-shaped title routed to its own library). Only movies, which
+    // have no season menu, are excluded. (Was `!== "tv"`, which wrongly hid every
+    // acquired anime's tracked state on the search card.)
+    if (state.title.type === "movie") {
       continue;
     }
     const list = trackedByTmdbId.get(state.title.tmdbId) ?? [];
@@ -217,18 +221,17 @@ function CandidateCard({
               <SeasonRequestMenu
                 tmdbId={candidate.tmdbId}
                 seasonNumbers={untrackedSeasons}
+                totalSeasonCount={candidate.seasonNumbers.length}
                 allLabel={
                   trackedLabel !== null ? `获取剩余 ${untrackedSeasons.length} 季` : "获取所有季"
                 }
               />
             ) : null}
-            {trackedLabel !== null ? (
-              <Link
-                className={
-                  isTv && untrackedSeasons.length > 0 ? "secondary-button" : "primary-button"
-                }
-                href={`/show/${candidate.tmdbId}?from=search`}
-              >
+            {/* The clickable title is the detail entry already. Only surface an
+                explicit 查看详情 when the show is FULLY tracked (no 获取 action
+                left) — never crammed next to a 获取 button. */}
+            {isTv && trackedLabel !== null && untrackedSeasons.length === 0 ? (
+              <Link className="primary-button" href={`/show/${candidate.tmdbId}?from=search`}>
                 查看详情
               </Link>
             ) : null}

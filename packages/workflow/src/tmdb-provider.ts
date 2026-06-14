@@ -548,7 +548,11 @@ function movieSearchCandidate(result: Extract<TmdbSearchResult, { media_type: "m
 
 function searchSeasonsFromTvDetails(details: TmdbTvDetails): MediaSearchCandidate["seasons"] {
   return (details.seasons ?? [])
-    .filter((season) => (season.season_number ?? 0) > 0)
+    // Same filter as prepareSeriesTarget: a real season (not specials) that
+    // actually HAS episodes. An announced-but-empty season (episode_count 0)
+    // must not be offered for acquisition — it would only ever be no_coverage,
+    // and it made the card show "共 2 季" while the detail page showed 1.
+    .filter((season) => (season.season_number ?? 0) > 0 && (season.episode_count ?? 0) > 0)
     .map((season) => {
       const seasonNumber = season.season_number ?? 0;
       const episodeCount = season.episode_count ?? 0;
