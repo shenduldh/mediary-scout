@@ -71,6 +71,14 @@ export interface WorkflowRepository {
     kind: WorkflowKind;
     now: string;
   }): Promise<PersistedWorkflowRunSnapshot | null>;
+  /**
+   * Reset every "running" workflow run back to "queued". For the single-instance
+   * in-process worker this is crash recovery: only that worker executes runs, so
+   * any run still "running" when the process (re)starts is orphaned by a dead
+   * worker and must be re-claimed, not left stuck forever. Returns how many were
+   * requeued.
+   */
+  requeueRunningWorkflowRuns(): Promise<number>;
   findActiveWorkflowRun(input: {
     trackedSeasonId: string;
     kind: WorkflowKind;
@@ -185,6 +193,21 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     this.workflowRuns.set(claimed.workflowRun.id, claimed);
 
     return withDerivedEpisodeSummaries(cloneWorkflowValue(claimed));
+  }
+
+  async requeueRunningWorkflowRuns(): Promise<number> {
+    let requeued = 0;
+    for (const [id, snapshot] of this.workflowRuns) {
+      if (snapshot.workflowRun.status !== "running") {
+        continue;
+      }
+      this.workflowRuns.set(id, {
+        ...snapshot,
+        workflowRun: { ...snapshot.workflowRun, status: "queued", finishedAt: null },
+      });
+      requeued += 1;
+    }
+    return requeued;
   }
 
   async findActiveWorkflowRun(input: {

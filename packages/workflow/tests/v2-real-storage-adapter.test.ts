@@ -11,7 +11,7 @@ function candidate(id: string): ResourceCandidate {
     snapshotId: "snap",
     index: 0,
     title: "Show 全集",
-    type: "anime",
+    type: "115",
     source: "pansou",
     episodeHints: [],
     qualityHints: [],

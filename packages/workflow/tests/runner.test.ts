@@ -1,30 +1,21 @@
-import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   createEpisodeStates,
   FakeAgentNodes,
   FakeResourceProvider,
   FakeStorageExecutor,
+  InMemoryWorkflowRepository,
   reconcileVerifiedFiles,
   runType2InitializationAndPersist,
   runType3MonitoringAndPersist,
-  SQLiteWorkflowRepository,
   type MediaTitle,
   type TrackedSeason,
   type VerifiedFile,
 } from "../src/index.js";
 
 describe("persistent workflow runners", () => {
-  let database: DatabaseSync | null = null;
-
-  afterEach(() => {
-    database?.close();
-    database = null;
-  });
-
   it("persists a type2 initialization run with its resource evidence", async () => {
-    database = new DatabaseSync(":memory:");
-    const repository = new SQLiteWorkflowRepository(database);
+    const repository = new InMemoryWorkflowRepository();
     const { title, season } = trackedFixture();
     const resourceProvider = new FakeResourceProvider({
       keywordResults: {
@@ -80,8 +71,7 @@ describe("persistent workflow runners", () => {
   });
 
   it("persists a type3 no-op run without forcing a provider search", async () => {
-    database = new DatabaseSync(":memory:");
-    const repository = new SQLiteWorkflowRepository(database);
+    const repository = new InMemoryWorkflowRepository();
     const { title, season } = trackedFixture();
     const existingFiles = [verifiedFile(season, "file_S01E01", "S01E01")];
     const episodes = reconcileVerifiedFiles({
@@ -134,8 +124,7 @@ describe("persistent workflow runners", () => {
   });
 
   it("persists a type3 repair run with resource evidence and transfer attempts", async () => {
-    database = new DatabaseSync(":memory:");
-    const repository = new SQLiteWorkflowRepository(database);
+    const repository = new InMemoryWorkflowRepository();
     const { title, season } = trackedFixture();
     const episodes = createEpisodeStates({
       trackedSeasonId: season.id,

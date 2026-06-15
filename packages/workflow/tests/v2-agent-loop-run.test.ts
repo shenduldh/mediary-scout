@@ -18,11 +18,11 @@ function scriptedModel(steps: Array<{ tool: string; input: unknown } | { text: s
     doGenerate: async () => {
       const step = steps[i++]!;
       if ("text" in step) {
-        return { content: [{ type: "text", text: step.text }], finishReason: "stop", usage: USAGE, warnings: [] };
+        return { content: [{ type: "text" as const, text: step.text }], finishReason: { unified: "stop" as const, raw: "stop" as const }, usage: USAGE, warnings: [] };
       }
       return {
-        content: [{ type: "tool-call", toolCallId: `c${i}`, toolName: step.tool, input: JSON.stringify(step.input) }],
-        finishReason: "tool-calls",
+        content: [{ type: "tool-call" as const, toolCallId: `c${i}`, toolName: step.tool, input: JSON.stringify(step.input) }],
+        finishReason: { unified: "tool-calls" as const, raw: "tool-calls" as const },
         usage: USAGE,
         warnings: [],
       };

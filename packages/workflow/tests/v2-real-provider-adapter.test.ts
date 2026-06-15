@@ -16,7 +16,7 @@ function realSnapshot(): ResourceSnapshot {
         snapshotId: "snap_real_1",
         index: 0,
         title: "莉可丽丝 全集 1080p",
-        type: "anime",
+        type: "115",
         source: "pansou",
         episodeHints: ["1-13"],
         qualityHints: ["1080p"],

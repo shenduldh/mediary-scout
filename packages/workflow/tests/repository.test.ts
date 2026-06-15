@@ -45,6 +45,39 @@ describe("InMemoryWorkflowRepository", () => {
     });
   });
 
+  it("requeues orphaned running runs (worker-crash recovery), leaving queued and terminal runs untouched", async () => {
+    const repository = new InMemoryWorkflowRepository();
+    const base = workflowPersistenceFixture({
+      resourceSnapshots: [],
+      decisions: [],
+      transferAttempts: [],
+      notifications: [],
+    });
+    const save = (id: string, status: "running" | "queued" | "succeeded") =>
+      repository.saveWorkflowRunSnapshot({
+        ...base,
+        workflowRun: {
+          ...base.workflowRun,
+          id,
+          status,
+          finishedAt: status === "succeeded" ? base.workflowRun.finishedAt : null,
+        },
+      });
+    await save("run_orphan", "running");
+    await save("run_queued", "queued");
+    await save("run_done", "succeeded");
+
+    const requeued = await repository.requeueRunningWorkflowRuns();
+
+    expect(requeued).toBe(1);
+    expect((await repository.getWorkflowRunSnapshot("run_orphan"))?.workflowRun.status).toBe("queued");
+    expect((await repository.getWorkflowRunSnapshot("run_queued"))?.workflowRun.status).toBe("queued");
+    expect((await repository.getWorkflowRunSnapshot("run_done"))?.workflowRun.status).toBe("succeeded");
+    // the requeued orphan is now claimable again
+    const claimed = await repository.claimNextQueuedWorkflowRun({ kind: "type2_init", now: "2026-06-11T01:00:00.000Z" });
+    expect(claimed).not.toBeNull();
+  });
+
   it("rejects inconsistent workflow snapshots before mutating stored state", async () => {
     const repository = new InMemoryWorkflowRepository();
     const validSnapshot = workflowPersistenceFixture();

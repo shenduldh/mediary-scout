@@ -25,8 +25,8 @@ function emptyProvider(): ResourceProvider {
 function searchThenReportModel() {
   let i = 0;
   const tool = (name: string, input: unknown) => ({
-    content: [{ type: "tool-call", toolCallId: `c${i}`, toolName: name, input: JSON.stringify(input) }],
-    finishReason: "tool-calls" as const,
+    content: [{ type: "tool-call" as const, toolCallId: `c${i}`, toolName: name, input: JSON.stringify(input) }],
+    finishReason: { unified: "tool-calls" as const, raw: "tool-calls" as const },
     usage: USAGE,
     warnings: [],
   });
@@ -35,7 +35,7 @@ function searchThenReportModel() {
       i += 1;
       if (i === 1) return tool("searchResources", { keyword: "盗梦空间" });
       if (i === 2) return tool("reportNoCoverage", { reason: "no candidates" });
-      return { content: [{ type: "text", text: "done" }], finishReason: "stop", usage: USAGE, warnings: [] };
+      return { content: [{ type: "text" as const, text: "done" }], finishReason: { unified: "stop" as const, raw: "stop" as const }, usage: USAGE, warnings: [] };
     },
   });
 }

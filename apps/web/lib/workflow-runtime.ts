@@ -142,6 +142,15 @@ export async function queueCandidateTracking(candidateId: string): Promise<Candi
   };
 }
 
+/**
+ * Crash recovery for the single-instance in-process worker: any run still
+ * "running" when the server (re)starts is orphaned by a dead worker (only this
+ * process executes runs), so requeue it to be claimed again. Returns the count.
+ */
+export async function recoverOrphanedRuns(): Promise<number> {
+  return getWorkflowRepository().requeueRunningWorkflowRuns();
+}
+
 export async function runNextQueuedWorkflow() {
   const repository = getWorkflowRepository();
   await hydratePan115CookieFromDb();

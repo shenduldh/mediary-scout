@@ -15,8 +15,14 @@ async function setup(need: string[] = ["S01E01"]) {
   return { sandbox };
 }
 
-async function call(tool: { execute: (args: unknown, opts: unknown) => Promise<unknown> }, args: unknown) {
-  return tool.execute(args, { toolCallId: "t", messages: [] }) as Promise<Record<string, unknown>>;
+async function call(
+  tool: { execute?: (args: unknown, opts: unknown) => PromiseLike<unknown> } | undefined,
+  args: unknown,
+) {
+  if (!tool?.execute) {
+    throw new Error("Expected sandbox tool to expose execute()");
+  }
+  return tool.execute(args, { toolCallId: "t", messages: [] }) as PromiseLike<Record<string, unknown>>;
 }
 
 describe("buildSandboxToolSet — the agent's tool surface over the cage", () => {

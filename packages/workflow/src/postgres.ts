@@ -205,6 +205,18 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
     return claimedRunId ? this.getWorkflowRunSnapshot(claimedRunId) : null;
   }
 
+  async requeueRunningWorkflowRuns(): Promise<number> {
+    return this.withTransaction(async (client) => {
+      const running = (await this.allWorkflowRuns(client)).filter(
+        (workflowRun) => workflowRun.status === "running",
+      );
+      for (const workflowRun of running) {
+        await this.upsertWorkflowRun(client, { ...workflowRun, status: "queued", finishedAt: null });
+      }
+      return running.length;
+    });
+  }
+
   async findActiveWorkflowRun(input: {
     trackedSeasonId: string;
     kind: WorkflowKind;

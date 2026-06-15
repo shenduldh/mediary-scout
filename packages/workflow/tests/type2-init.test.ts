@@ -371,6 +371,10 @@ class RecordingCandidateStorage implements StorageExecutor {
     return [];
   }
 
+  async listSubdirectories(): Promise<Array<{ id: string; path: string }>> {
+    return [];
+  }
+
   async renameFile(): Promise<void> {}
 
   async transfer(input: {

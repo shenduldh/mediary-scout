@@ -38,7 +38,7 @@ describe("§6a interrogation harness (verify '聪明' before spending real money
     const model = new MockLanguageModelV3({
       doGenerate: async () => {
         n += 1;
-        return { content: [{ type: "text", text: `answer ${n}` }], finishReason: "stop", usage: USAGE, warnings: [] };
+        return { content: [{ type: "text" as const, text: `answer ${n}` }], finishReason: { unified: "stop" as const, raw: "stop" as const }, usage: USAGE, warnings: [] };
       },
     });
 

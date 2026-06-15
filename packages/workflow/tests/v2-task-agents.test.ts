@@ -23,13 +23,13 @@ function finishImmediatelyModel() {
     doGenerate: async () => {
       if (i++ === 0) {
         return {
-          content: [{ type: "tool-call", toolCallId: "c1", toolName: "reportNoCoverage", input: JSON.stringify({ reason: "test stub: nothing covers it" }) }],
-          finishReason: "tool-calls" as const,
+          content: [{ type: "tool-call" as const, toolCallId: "c1", toolName: "reportNoCoverage", input: JSON.stringify({ reason: "test stub: nothing covers it" }) }],
+          finishReason: { unified: "tool-calls" as const, raw: "tool-calls" as const },
           usage: USAGE,
           warnings: [],
         };
       }
-      return { content: [{ type: "text", text: "done" }], finishReason: "stop" as const, usage: USAGE, warnings: [] };
+      return { content: [{ type: "text" as const, text: "done" }], finishReason: { unified: "stop" as const, raw: "stop" as const }, usage: USAGE, warnings: [] };
     },
   });
 }
