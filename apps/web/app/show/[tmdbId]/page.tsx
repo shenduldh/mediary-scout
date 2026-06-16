@@ -52,10 +52,12 @@ export default async function ShowPage({
           label={from === "search" ? "返回搜索" : from === "library" ? "返回媒体库" : "返回"}
           fallbackHref={from === "library" ? "/?tab=library" : "/?tab=search"}
         />
-        {/* No skeleton fallback: the sidebar + back link render instantly and the
-            hub content streams into place (~0.1s when cached). The detail page
-            never flashes skeleton bars — cold or on re-entry. */}
-        <Suspense fallback={null}>
+        {/* Contextual skeleton for the genuine first render (the data itself is a
+            fast DB read; this covers the dev/cold render + transport). A re-visit
+            within the staleTimes window is served from the client Router Cache, so
+            it renders instantly without this. NOT the global search skeleton — that
+            was the wrong shape on /show and was removed with app/loading.tsx. */}
+        <Suspense fallback={<HubSkeleton />}>
           <TitleHub params={params} />
         </Suspense>
       </main>
@@ -214,6 +216,18 @@ function MovieHub({ view }: { view: MovieHubView }) {
 function formatMovieDate(releaseDate: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(releaseDate);
   return match ? `${match[1]}年${Number(match[2])}月${Number(match[3])}日` : releaseDate;
+}
+
+/** Contextual placeholder while the hub's first render streams in. */
+function HubSkeleton() {
+  return (
+    <section className="title-hub">
+      <div className="skeleton skeleton-stage" />
+      <div className="skeleton skeleton-heading" />
+      <div className="skeleton skeleton-metric" />
+      <div className="skeleton skeleton-metric" />
+    </section>
+  );
 }
 
 function SeasonRow({

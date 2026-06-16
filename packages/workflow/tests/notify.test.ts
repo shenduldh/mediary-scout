@@ -190,9 +190,11 @@ describe("dispatchNotifications", () => {
       opts: { webBaseUrl: "https://app.example.com" },
     });
     const sent = JSON.parse(requests[0]!.body);
+    // imageUrl is still carried for native-image channels (Bark icon, 企微 news)...
     expect(sent.imageUrl).toBe("https://image.tmdb.org/t/p/w500/p.jpg");
     expect(sent.url).toBe("https://app.example.com/show/1184918");
-    expect(sent.markdown).toContain("![](https://image.tmdb.org/t/p/w500/p.jpg)");
+    // ...but the markdown body is digest-style text — no inline poster.
+    expect(sent.markdown).not.toContain("![](");
   });
 
   it("falls back to plain {title, text} when a notification has no report", async () => {
@@ -230,10 +232,10 @@ describe("buildNotifyMessage — rich per-channel push payload (L2)", () => {
     expect(msg.text).toContain("已获取入库"); // plain-text fallback unchanged
     expect(msg.imageUrl).toBe("https://image.tmdb.org/t/p/w500/abc.jpg"); // TMDB CDN — no self-hosting
     expect(msg.url).toBe("https://app.example.com/show/1184918");
-    // Poster is a markdown image — Server酱 renders ![]() but shows raw <img> as text.
-    expect(msg.markdown).toContain("![](https://image.tmdb.org/t/p/w500/abc.jpg)");
-    // The head lives in the `title` field; repeating it as a markdown heading
-    // rendered a duplicate title under the poster — the body must NOT carry it.
+    // imageUrl is exposed for native-image channels, but the markdown body is
+    // digest-style text with NO inline poster (the user preferred that layout).
+    expect(msg.markdown).not.toContain("![](");
+    // The head lives in the `title` field; the body must not repeat it as a heading.
     expect(msg.markdown).not.toContain("**热辣滚烫 (2024)**");
     expect(msg.markdown).toContain("2160p");
     expect(msg.markdown).toContain("https://app.example.com/show/1184918");

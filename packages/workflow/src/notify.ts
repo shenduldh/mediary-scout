@@ -48,15 +48,12 @@ export function buildNotifyMessage(
   const webBase = opts?.webBaseUrl?.replace(/\/$/, "");
   const url = webBase && report.tmdbId !== undefined ? `${webBase}/show/${report.tmdbId}` : undefined;
 
+  // No poster in the body: Server酱's markdown image rendered full-bleed and the
+  // user preferred the clean daily-digest layout (structured text only). The head
+  // is NOT repeated as a heading either — every channel shows it as its own title
+  // field. `imageUrl` is still emitted for channels with a NATIVE image slot
+  // (Bark icon, 企微 news thumbnail), which aren't affected by this.
   const md: string[] = [];
-  if (imageUrl) {
-    // Markdown image, not raw <img>: Server酱 renders ![]() but shows an HTML <img>
-    // tag as literal text (verified), so the poster must use markdown. Width is the
-    // channel's call (Server酱 fits it to container width) — not settable here.
-    // The head is NOT repeated as a markdown heading: every channel already shows
-    // it as its own title field, and a repeat rendered a duplicate title.
-    md.push(`![](${imageUrl})`, "");
-  }
   for (const line of report.lines) {
     md.push(`- ${line}`);
   }
