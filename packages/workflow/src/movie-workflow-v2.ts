@@ -13,7 +13,7 @@ import {
   type TransferAttempt,
   type WorkflowStatus,
 } from "./domain.js";
-import { buildMovieReport, formatReportPushText } from "./notification-report.js";
+import { buildMovieReport, dominantQualityFromTransfer, formatReportPushText } from "./notification-report.js";
 import type { ResourceProvider, StorageExecutor } from "./ports.js";
 import type { DeadLinkStore } from "./acquisition-v2/dead-links.js";
 import { runAcquisitionV2 } from "./acquisition-v2/orchestrator.js";
@@ -119,7 +119,7 @@ function buildResult(input: {
   }).map((episode) => ({ ...episode, obtained: input.obtained }));
 
   const t = input.request.title;
-  const baseReport = buildMovieReport(t.title, undefined, {
+  const baseReport = buildMovieReport(t.title, dominantQualityFromTransfer(input.snapshots, input.attempts), {
     posterPath: t.posterPath ?? null,
     tmdbId: t.tmdbId,
     mediaType: t.type,

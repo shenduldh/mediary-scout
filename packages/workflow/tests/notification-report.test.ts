@@ -5,6 +5,7 @@ import {
   buildSeriesReport,
   createEpisodeStates,
   dominantQuality,
+  dominantQualityFromTransfer,
   episodeCode,
   formatDailyDigestPushText,
   formatReportPushText,
@@ -86,6 +87,35 @@ describe("resource quality in notifications", () => {
     expect(dominantQuality(["Show.S01E01.1080p.mkv", "Show.S01E02.720p.mkv"])).toBe("1080p");
     expect(dominantQuality(["Movie.4K.UHD.BluRay.mkv"])).toBe("2160p");
     expect(dominantQuality(["plain.mkv"])).toBeUndefined();
+  });
+
+  it("derives quality from the SUCCEEDED transfer's candidate title (no extra 115 read)", () => {
+    const snap = (candidates: Array<{ id: string; title: string }>) => ({
+      id: "s1",
+      provider: "pansou" as const,
+      keyword: "热辣滚烫",
+      createdAt: "2026-06-16T00:00:00.000Z",
+      candidates: candidates.map((c, i) => ({
+        id: c.id,
+        snapshotId: "s1",
+        index: i,
+        title: c.title,
+        type: "115" as const,
+        source: "pansou" as const,
+        episodeHints: [],
+        qualityHints: [],
+        providerPayload: {},
+      })),
+    });
+    const snapshots = [snap([
+      { id: "c1", title: "热辣滚烫 2024 2160p WEB-DL" },
+      { id: "c2", title: "热辣滚烫 1080p" },
+    ])];
+    const succeeded = { id: "a1", workflowRunId: "r", candidateId: "c1", status: "succeeded" as const, providerMessage: "", materializedFileIds: ["f1"] };
+    expect(dominantQualityFromTransfer(snapshots, [succeeded])).toBe("2160p");
+    // no succeeded transfer → undefined (don't guess)
+    expect(dominantQualityFromTransfer(snapshots, [{ ...succeeded, status: "failed" as const }])).toBeUndefined();
+    expect(dominantQualityFromTransfer([], [])).toBeUndefined();
   });
 
   it("surfaces the acquired quality in the push so the message isn't bare", () => {

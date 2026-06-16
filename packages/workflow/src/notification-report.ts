@@ -5,7 +5,9 @@ import type {
   NotificationEvent,
   NotificationReport,
   NotificationReportStatus,
+  ResourceSnapshot,
   TrackedSeason,
+  TransferAttempt,
 } from "./domain.js";
 
 /** "S01E13" -> "E13". The season is already in the card's title row. */
@@ -152,6 +154,7 @@ export function buildSeriesReport(input: {
   seasons: SeriesReportSeasonInput[];
   noCoverage?: boolean;
   meta?: NotificationTitleMeta;
+  quality?: string;
 }): NotificationReport {
   if (input.noCoverage) {
     return {
@@ -209,6 +212,7 @@ export function buildSeriesReport(input: {
     lines,
     newlyObtained: [],
     realMissing: partial.flatMap((entry) => entry.missing),
+    ...(input.quality ? { quality: input.quality } : {}),
     ...(input.meta ?? {}),
   };
 }
@@ -289,6 +293,29 @@ export function dominantQuality(fileNames: string[]): string | undefined {
  *  callers don't each repeat `files.map((f) => f.name)`. */
 export function dominantQualityOfFiles(files: { name: string }[]): string | undefined {
   return dominantQuality(files.map((file) => file.name));
+}
+
+/**
+ * Dominant quality derived from the SUCCEEDED transfer's candidate title — the
+ * resource name (PanSou) carries the quality tag (2160p / 4K …), so we get it
+ * for free from the run's snapshots+attempts, no extra 115 read. Undefined when
+ * nothing succeeded or no tag is present (never guessed).
+ */
+export function dominantQualityFromTransfer(
+  snapshots: ResourceSnapshot[],
+  attempts: TransferAttempt[],
+): string | undefined {
+  const succeededIds = new Set(
+    attempts.filter((attempt) => attempt.status === "succeeded").map((attempt) => attempt.candidateId),
+  );
+  if (succeededIds.size === 0) {
+    return undefined;
+  }
+  const titles = snapshots
+    .flatMap((snapshot) => snapshot.candidates)
+    .filter((candidate) => succeededIds.has(candidate.id))
+    .map((candidate) => candidate.title);
+  return dominantQuality(titles);
 }
 
 /**
