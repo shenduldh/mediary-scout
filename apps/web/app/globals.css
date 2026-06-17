@@ -2630,3 +2630,27 @@ select.setting-control {
   .act-spin { animation: none; }
   .act-bar-fill { transition: none; }
 }
+
+/* Unread notifications badge — alert tone (distinct from the 活动 count). */
+.nav-badge-alert {
+  background: var(--negative);
+}
+
+/* NEW corner pill on a notification card seen-for-the-first-time this visit. */
+.feed-card.is-new {
+  position: relative;
+}
+
+.feed-card.is-new::after {
+  content: "NEW";
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  background: var(--negative);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+}

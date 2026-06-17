@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import type { NotificationEvent, NotificationReportStatus } from "@media-track/workflow";
 import { landedSize } from "@media-track/workflow";
+import { NotificationsSeenMarker } from "../../components/notifications-seen-marker";
 import { AppSidebar } from "../../components/app-sidebar";
 import { ensureDemoSeeded, getWorkflowRepository } from "../../lib/workflow-runtime";
 
@@ -50,6 +51,7 @@ export default function NotificationsPage() {
     <div className="app-shell">
       <AppSidebar active="notifications" />
       <main className="main product-main">
+        <NotificationsSeenMarker />
         <div className="section-heading library-heading">
           <div>
             <h1>通知</h1>
@@ -115,7 +117,7 @@ function NotificationCard({ notification }: { notification: NotificationEvent })
   // Legacy / report-less events (foreign work, old plain records).
   if (!report) {
     return (
-      <article className="feed-card">
+      <article className="feed-card" data-created-at={notification.createdAt}>
         <div className="feed-card-head">
           <span className={`feed-icon tone-${icon.tone}`}>
             <KindIcon size={15} aria-hidden />
@@ -156,7 +158,7 @@ function NotificationCard({ notification }: { notification: NotificationEvent })
   const posterUrl = report.posterPath ? `${TMDB_FEED_POSTER}${report.posterPath}` : null;
 
   return (
-    <article className={`feed-card${posterUrl ? " has-poster" : ""}`}>
+    <article className={`feed-card${posterUrl ? " has-poster" : ""}`} data-created-at={notification.createdAt}>
       {posterUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img className="feed-poster" src={posterUrl} alt="" loading="lazy" />

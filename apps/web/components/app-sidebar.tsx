@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Activity, Bell, Film, Library, Settings } from "lucide-react";
 import { SearchNavLink } from "./search-memory";
 import { ActivityNavBadge } from "./activity-nav-badge";
+import { NotificationsNavBadge } from "./notifications-nav-badge";
 
 export function AppSidebar({
   active,
@@ -43,6 +44,7 @@ export function AppSidebar({
             >
               <Bell size={16} aria-hidden />
               通知
+              <NotificationsNavBadge />
             </Link>
           </li>
           {/* 活动 + 设置 are secondary: on desktop they live in the footer; on the
