@@ -42,8 +42,8 @@ const pref = await rt.getQualityPreference(repo);
 console.log(`✅ quality_preference set → getQualityPreference()=${pref}`);
 
 // 2) Resolve ids
-const movie = await tmdbSearch("movie", "沙丘 第二部");
-const show = await tmdbSearch("tv", "切尔诺贝利");
+const movie = await tmdbSearch("movie", "流浪地球2");
+const show = await tmdbSearch("tv", "后翼弃兵");
 console.log("movie:", movie);
 console.log("show:", show);
 if (!movie || !show) throw new Error("TMDB resolve failed");
