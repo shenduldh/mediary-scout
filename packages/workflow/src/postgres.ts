@@ -11,6 +11,7 @@ import {
   type TransferAttempt,
   type WorkflowKind,
   type WorkflowRun,
+  type WorkflowRunProgress,
 } from "./domain.js";
 import {
   claimWorkflowRun,
@@ -254,6 +255,24 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
       }
     }
     return snapshots;
+  }
+
+  async updateWorkflowRunProgress(workflowRunId: string, progress: WorkflowRunProgress): Promise<void> {
+    await this.withTransaction(async (client) => {
+      const run = await this.selectOne<WorkflowRun>(
+        client,
+        "SELECT payload FROM workflow_runs WHERE id = $1",
+        [workflowRunId],
+      );
+      if (!run) {
+        return;
+      }
+      const previousPercent = run.progress?.percent ?? 0;
+      await this.upsertWorkflowRun(client, {
+        ...run,
+        progress: { ...progress, percent: Math.max(previousPercent, progress.percent) },
+      });
+    });
   }
 
   async getTrackedSeasonState(trackedSeasonId: string): Promise<TrackedSeasonState | null> {

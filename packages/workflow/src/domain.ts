@@ -64,6 +64,22 @@ export interface EpisodeState {
   verifiedFileIds: string[];
 }
 
+/** Live, cleaned agent progress written mid-run for the activity page's ticker +
+ *  rough bar. Absent until the run starts producing work; `percent` is clamped
+ *  monotonic on write. Not authoritative for anything — purely a display signal. */
+export interface WorkflowRunProgress {
+  /** Cleaned 中文 line of what the agent is doing now (no ids/paths). */
+  activity: string;
+  /** Coarse pipeline phase (AgentPhase): search/pick/transfer/verify/organize/mark/finalize. */
+  phase: string;
+  /** Rough 0–100 progress, phase-weighted + monotonic. */
+  percent: number;
+  updatedAt: string;
+  /** Real sub-fraction headline when known (episodes obtained / needed this run). */
+  obtained?: number;
+  needed?: number;
+}
+
 export interface WorkflowRun {
   id: string;
   kind: WorkflowKind;
@@ -72,6 +88,7 @@ export interface WorkflowRun {
   startedAt: string;
   finishedAt: string | null;
   auditEvents: AuditEvent[];
+  progress?: WorkflowRunProgress;
 }
 
 export interface AuditEvent {

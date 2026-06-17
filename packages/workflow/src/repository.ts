@@ -8,6 +8,7 @@ import type {
   TransferAttempt,
   WorkflowKind,
   WorkflowRun,
+  WorkflowRunProgress,
   WorkflowStatus,
 } from "./domain.js";
 import { MAGNET_DEAD_LINK_TTL_MS } from "./acquisition-v2/dead-links.js";
@@ -87,6 +88,10 @@ export interface WorkflowRepository extends DeadLinkStore {
   }): Promise<PersistedWorkflowRunSnapshot | null>;
   /** Every queued/running run, newest first — drives the library "获取中" placeholders. */
   listActiveWorkflowRuns(): Promise<PersistedWorkflowRunSnapshot[]>;
+  /** Lightweight mid-run update of the live agent progress shown on the activity
+   *  page; `percent` is clamped monotonic so retries never rewind the bar. No-op
+   *  for an unknown run. */
+  updateWorkflowRunProgress(workflowRunId: string, progress: WorkflowRunProgress): Promise<void>;
   getTrackedSeasonState(trackedSeasonId: string): Promise<TrackedSeasonState | null>;
   listTrackedSeasonStates(): Promise<TrackedSeasonState[]>;
   listEpisodeStates(trackedSeasonId: string): Promise<EpisodeState[]>;
@@ -267,6 +272,21 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
       .filter((snapshot) => isActiveWorkflowStatus(snapshot.workflowRun.status))
       .sort((a, b) => b.workflowRun.startedAt.localeCompare(a.workflowRun.startedAt))
       .map((snapshot) => withDerivedEpisodeSummaries(cloneWorkflowValue(snapshot)));
+  }
+
+  async updateWorkflowRunProgress(workflowRunId: string, progress: WorkflowRunProgress): Promise<void> {
+    const stored = this.workflowRuns.get(workflowRunId);
+    if (!stored) {
+      return;
+    }
+    const previousPercent = stored.workflowRun.progress?.percent ?? 0;
+    this.workflowRuns.set(workflowRunId, {
+      ...stored,
+      workflowRun: {
+        ...stored.workflowRun,
+        progress: { ...progress, percent: Math.max(previousPercent, progress.percent) },
+      },
+    });
   }
 
   async getTrackedSeasonState(trackedSeasonId: string): Promise<TrackedSeasonState | null> {
