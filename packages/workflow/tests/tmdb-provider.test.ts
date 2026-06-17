@@ -467,3 +467,24 @@ describe("TmdbMetadataProvider multi-access fallback", () => {
     expect(seen[0]?.Authorization).toBe("Bearer legacy");
   });
 });
+
+describe("TmdbSearchProvider multi-access fallback", () => {
+  it("falls back to the proxy access when the user key fails", async () => {
+    const calls: string[] = [];
+    const provider = new TmdbSearchProvider({
+      accesses: [
+        { baseURL: "https://primary.example/3", readToken: "badkey" },
+        { baseURL: "https://proxy.example" },
+      ],
+      fetchJson: async (url) => {
+        calls.push(url);
+        if (url.startsWith("https://primary.example")) throw new Error("HTTP 429");
+        return { results: [] };
+      },
+    });
+    const out = await provider.searchMedia({ query: "matrix" });
+    expect(out).toEqual([]);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toContain("https://proxy.example/search/multi");
+  });
+});

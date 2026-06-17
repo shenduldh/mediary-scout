@@ -183,16 +183,14 @@ export class TmdbMetadataProvider {
 }
 
 export class TmdbSearchProvider implements MediaSearchProvider {
-  private readonly readToken: string;
-  private readonly baseURL: string;
+  private readonly accesses: TmdbAccess[];
   private readonly language: string;
   private readonly fetchJson: TmdbFetchJson;
   private readonly maxResults: number;
   private readonly tvDetailsLimit: number;
 
   constructor(options: TmdbSearchProviderOptions) {
-    this.readToken = options.readToken;
-    this.baseURL = (options.baseURL ?? "https://api.themoviedb.org/3").replace(/\/+$/, "");
+    this.accesses = resolveAccesses(options);
     this.language = options.language ?? "zh-CN";
     this.fetchJson = options.fetchJson ?? defaultFetchJson;
     this.maxResults = options.maxResults ?? 10;
@@ -240,14 +238,7 @@ export class TmdbSearchProvider implements MediaSearchProvider {
   }
 
   private async get(path: string, query: Record<string, string>): Promise<unknown> {
-    const url = `${this.baseURL}/${path}?${new URLSearchParams(query).toString()}`;
-    return this.fetchJson(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${this.readToken}`,
-        "Content-Type": "application/json;charset=utf-8",
-      },
-    });
+    return fetchViaAccessChain(this.accesses, path, query, this.fetchJson);
   }
 }
 
