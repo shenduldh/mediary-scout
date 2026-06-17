@@ -1,7 +1,10 @@
 import {
   createPanSouResourceProviderFromEnv,
   createProtectedPan115CookieStorageExecutorFromEnv,
+  createTmdbMetadataProvider,
   createTmdbMetadataProviderFromEnv,
+  TMDB_DIRECT_BASE_URL,
+  type TmdbAccess,
   episodeCode,
   FakeResourceProvider,
   FakeStorageExecutor,
@@ -256,6 +259,33 @@ export async function getLlmConfig(repository: {
     apiKey: await read(LLM_API_KEY_SETTING_KEY),
     modelId: await read(LLM_MODEL_ID_SETTING_KEY),
   };
+}
+
+export const TMDB_API_KEY_SETTING_KEY = "tmdb_api_key";
+
+/** Author-deployed CF Worker that proxies TMDB with the author's key (KV-cached).
+ *  env TMDB_PROXY_BASE_URL overrides it (e.g. a user who self-hosts the worker). */
+export const DEFAULT_TMDB_PROXY_BASE_URL = "https://media-track-tmdb-proxy.fancydirty.workers.dev";
+
+/** Ordered TMDB access channels: user's own key (direct) → env token (direct) →
+ *  the proxy Worker (always last, no token — the Worker injects the author's).
+ *  Each HTTP call tries them in order; a dead user key falls through to the proxy. */
+export async function getTmdbAccesses(
+  repository: { getSetting(key: string): Promise<string | null> },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<TmdbAccess[]> {
+  const accesses: TmdbAccess[] = [];
+  const userKey = (await repository.getSetting(TMDB_API_KEY_SETTING_KEY))?.trim();
+  if (userKey) {
+    accesses.push({ baseURL: TMDB_DIRECT_BASE_URL, readToken: userKey });
+  }
+  const envToken = env.TMDB_READ_TOKEN?.trim();
+  if (envToken) {
+    accesses.push({ baseURL: TMDB_DIRECT_BASE_URL, readToken: envToken });
+  }
+  const proxyBase = env.TMDB_PROXY_BASE_URL?.trim() || DEFAULT_TMDB_PROXY_BASE_URL;
+  accesses.push({ baseURL: proxyBase });
+  return accesses;
 }
 
 export const DAILY_SWEEP_TIME_SETTING_KEY = "daily_sweep_time";
