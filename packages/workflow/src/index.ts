@@ -23,6 +23,7 @@ export * from "./tmdb-provider.js";
 export * from "./storage-115-executor.js";
 export * from "./pan115-cookie-client.js";
 export * from "./quark-cookie-client.js";
+export * from "./quark-qrcode-login.js";
 export * from "./quark-storage-executor.js";
 export * from "./storage-brands.js";
 export * from "./storage-executor-factory.js";
