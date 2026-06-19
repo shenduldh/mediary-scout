@@ -18,7 +18,12 @@ import type { NotificationEvent, NotificationReportStatus } from "@media-track/w
 import { landedSize } from "@media-track/workflow";
 import { NotificationsSeenMarker } from "../../components/notifications-seen-marker";
 import { AppSidebar } from "../../components/app-sidebar";
-import { ensureDemoSeeded, getCurrentAccountId, getWorkflowRepository } from "../../lib/workflow-runtime";
+import {
+  ensureDemoSeeded,
+  getCurrentAccountId,
+  getWorkflowRepository,
+  resolveGlobalWorkspace,
+} from "../../lib/workflow-runtime";
 
 // The kind only drives the leading ICON now — its textual label used to render
 // as a second badge next to the status pill ("开始追踪" beside "已完结"), which
@@ -46,10 +51,16 @@ const statusMeta: Record<NotificationReportStatus, { label: string; tone: string
   no_coverage: { label: "暂无资源", tone: "amber", icon: CircleSlash },
 };
 
-export default function NotificationsPage() {
+export default async function NotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ w?: string }>;
+}) {
+  const { w } = await searchParams;
+  const workspace = await resolveGlobalWorkspace(w);
   return (
     <div className="app-shell">
-      <AppSidebar active="notifications" />
+      <AppSidebar active="notifications" basePath={workspace.basePath} activeStorageId={workspace.activeStorageId} />
       <main className="main product-main">
         <NotificationsSeenMarker />
         <div className="section-heading library-heading">
@@ -59,26 +70,26 @@ export default function NotificationsPage() {
           </div>
         </div>
         <Suspense fallback={<FeedSkeleton />}>
-          <NotificationFeed />
+          <NotificationFeed connectedStorageId={workspace.connectedStorageId} />
         </Suspense>
       </main>
     </div>
   );
 }
 
-async function NotificationFeed() {
+async function NotificationFeed({ connectedStorageId }: { connectedStorageId: string | null }) {
   // SQLite reads + "today/yesterday" labels are request-time work; declare it
   // so the PPR shell stays static and this hole streams per request.
   await connection();
   const repository = getWorkflowRepository();
   const accountId = await getCurrentAccountId();
   await ensureDemoSeeded(repository);
-  const notifications = await repository.listNotifications({ limit: 100, accountId });
+  const notifications = await repository.listNotifications({ limit: 100, accountId, connectedStorageId });
 
   // Poster backfill: older notifications predate report.posterPath. Source the
   // poster from the still-tracked title (by tmdbId, then name) so cards show a
   // real poster instead of nothing.
-  const trackedStates = await repository.listTrackedSeasonStates(accountId);
+  const trackedStates = await repository.listTrackedSeasonStates({ accountId, connectedStorageId });
   const posterByTmdb = new Map<number, string>();
   const posterByName = new Map<string, string>();
   for (const state of trackedStates) {
