@@ -130,3 +130,29 @@ export function scopeMatches(
   }
   return true;
 }
+
+/** Build a global-page link (通知/活动/设置) that carries the active drive as a
+ *  `?w` query param. Primary drive is represented by `activeStorageId === undefined`
+ *  → bare base (mirrors how the primary library is "/" not "/w/<id>"). */
+export function globalNavHref(base: string, activeStorageId: string | undefined): string {
+  return activeStorageId ? `${base}?w=${encodeURIComponent(activeStorageId)}` : base;
+}
+
+/** Resolve a global page's active workspace from its `?w` param + the account's
+ *  drives. A stale/unknown `w` gracefully falls back to primary (NOT a 404 —
+ *  unlike the /w/<id> route). The primary drive is canonicalized to a bare path
+ *  with `activeStorageId: undefined` so its global links stay `?w`-free. */
+export function resolveWorkspaceFromParam(
+  storages: ReadonlyArray<{ id: string; createdAt: string }>,
+  w: string | undefined,
+): { connectedStorageId: string | null; basePath: string; activeStorageId: string | undefined } {
+  const primaryId = pickWorkspaceStorageId(storages, undefined); // never throws (undefined param)
+  const owned = w != null && storages.some((storage) => storage.id === w);
+  const resolved = owned ? w! : primaryId;
+  const isPrimary = resolved == null || resolved === primaryId;
+  return {
+    connectedStorageId: resolved,
+    basePath: isPrimary ? "/" : `/w/${resolved}`,
+    activeStorageId: isPrimary ? undefined : resolved!,
+  };
+}
