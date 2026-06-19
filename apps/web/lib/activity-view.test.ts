@@ -120,4 +120,22 @@ describe("getActivityView", () => {
     const done = view.recentCompleted.find((c) => c.title === "OldNoPoster")!;
     expect(done.posterPath).toBe("/p7.jpg"); // backfilled from the still-tracked title
   });
+
+  it("scopes active runs to the requested drive (connectedStorageId)", async () => {
+    const repo = new InMemoryWorkflowRepository();
+    const onA = run({ id: "r_a", tmdbId: 1, name: "Alpha", status: "running", startedAt: "2026-06-19T00:00:00Z" });
+    onA.accountId = "acct_default";
+    onA.connectedStorageId = "cs_a";
+    const onB = run({ id: "r_b", tmdbId: 2, name: "Beta", status: "running", startedAt: "2026-06-19T00:00:00Z" });
+    onB.accountId = "acct_default";
+    onB.connectedStorageId = "cs_b";
+    await repo.saveWorkflowRunSnapshot(onA);
+    await repo.saveWorkflowRunSnapshot(onB);
+
+    const viewA = await getActivityView({ repository: repo, accountId: "acct_default", connectedStorageId: "cs_a" });
+    expect(viewA.active.map((r) => r.title)).toEqual(["Alpha"]);
+
+    const viewB = await getActivityView({ repository: repo, accountId: "acct_default", connectedStorageId: "cs_b" });
+    expect(viewB.active.map((r) => r.title)).toEqual(["Beta"]);
+  });
 });

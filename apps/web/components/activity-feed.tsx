@@ -8,7 +8,7 @@ import type { ActivityActiveRun, ActivityCompletedItem, ActivityView } from "../
 const POLL_MS = 2600;
 const POSTER = "https://image.tmdb.org/t/p/w185";
 
-export function ActivityFeed() {
+export function ActivityFeed({ storageId }: { storageId?: string | undefined }) {
   // 已完成 is session-scoped by OBSERVATION: the runIds this browser saw active.
   // Robust to notification createdAt timing (a since-filter wrongly dropped runs
   // the user opened the page after — createdAt ≈ run-start, not finish).
@@ -19,7 +19,8 @@ export function ActivityFeed() {
     let alive = true;
     const poll = async () => {
       try {
-        const res = await fetch("/api/activity", { cache: "no-store" });
+        const url = storageId ? `/api/activity?w=${encodeURIComponent(storageId)}` : "/api/activity";
+        const res = await fetch(url, { cache: "no-store" });
         if (!res.ok) return;
         const data = (await res.json()) as ActivityView;
         for (const run of data.active) {
@@ -36,7 +37,7 @@ export function ActivityFeed() {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [storageId]);
 
   const running = view.active.filter((run) => run.status === "running");
   const queued = view.active

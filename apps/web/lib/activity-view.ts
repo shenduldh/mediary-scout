@@ -57,14 +57,20 @@ export async function getActivityView(input: {
   >;
   /** Scope the queue/notifications to one account (§7). Omitted → default. */
   accountId?: string;
+  /** Tree model: scope queue/completed to one drive. Omitted/null → account-wide. */
+  connectedStorageId?: string | null;
 }): Promise<ActivityView> {
-  const activeRuns = await input.repository.listActiveWorkflowRuns(input.accountId);
+  const scope =
+    input.accountId === undefined
+      ? undefined
+      : { accountId: input.accountId, connectedStorageId: input.connectedStorageId ?? null };
+  const activeRuns = await input.repository.listActiveWorkflowRuns(scope);
 
   // Poster backfill source: older notifications predate report.posterPath, so a
   // completed item can lack a poster. The title is still tracked → source the
   // poster from it (by tmdbId, falling back to title name) so 已完成 shows the
   // real poster instead of the text fallback.
-  const trackedStates = await input.repository.listTrackedSeasonStates(input.accountId);
+  const trackedStates = await input.repository.listTrackedSeasonStates(scope);
   const posterByTmdb = new Map<number, string>();
   const posterByName = new Map<string, string>();
   for (const state of trackedStates) {
@@ -107,7 +113,9 @@ export async function getActivityView(input: {
   // a server-side since filter wrongly drops runs the user opened the page after).
   const notifications = await input.repository.listNotifications({
     limit: 30,
-    ...(input.accountId ? { accountId: input.accountId } : {}),
+    ...(input.accountId
+      ? { accountId: input.accountId, connectedStorageId: input.connectedStorageId ?? null }
+      : {}),
   });
   const recentCompleted: ActivityCompletedItem[] = notifications
     .filter(
