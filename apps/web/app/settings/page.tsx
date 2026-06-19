@@ -186,6 +186,9 @@ async function ResourceProviderSection() {
       <PanSouConfigForm baseURL={pansouBaseURL} />
       {showProwlarr ? (
         <>
+          <p className="push-help" style={{ margin: "10px 0 0" }}>
+            注：夸克网盘 API 不支持磁力，Prowlarr 仅对 115 盘生效；若你只用夸克，无需配置 Prowlarr。
+          </p>
           <div style={{ height: 18 }} />
           <ProwlarrConfigForm baseURL={prowlarrBaseURL} apiKeySet={prowlarrApiKeySet} />
         </>
@@ -222,30 +225,24 @@ async function Pan115Section() {
         )}
       </div>
 
-      {status.connected ? (
-        <p className="qr-hint">
-          {status.userName ? `账号：${status.userName} · ` : ""}
-          {status.app ? `客户端类型：${status.app} · ` : ""}
-          {status.connectedAt ? `连接于 ${status.connectedAt.slice(0, 16).replace("T", " ")}` : ""}
-          {status.source === "env" ? "当前 cookie 来自 .env；扫码连接后将以数据库为准。" : ""}
-        </p>
-      ) : (
-        <p className="qr-hint">还没有可用的 115 cookie，扫码连接后即可开始获取资源。</p>
-      )}
+      {drives.length === 0 ? (
+        <p className="qr-hint">还没有连接任何网盘，扫码 115 或粘贴夸克 cookie 后即可开始获取资源。</p>
+      ) : null}
 
       {drives.length > 0 ? (
         <div style={{ margin: "14px 0" }}>
           <p className="panel-note" style={{ marginBottom: 8 }}>
-            本账号已连接的网盘{drives.length >= 2 ? "（左下角可切换工作区，每块盘各自独立）" : ""}
+            本账号已连接的网盘{drives.length >= 2 ? "（左上角可切换工作区，每块盘各自独立）" : ""}
           </p>
           <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
             {drives.map((drive) => (
               <li key={drive.id} className="setting-row" style={{ justifyContent: "space-between" }}>
                 <span>
-                  {drive.provider === "pan115" ? "115" : drive.provider === "quark" ? "夸克" : drive.provider}
-                  {drive.label ? ` · ${drive.label}` : ""}
+                  {drive.provider === "pan115" ? "115网盘" : drive.provider === "quark" ? "夸克网盘" : drive.provider}
                   <span className="push-help"> · 账号 {drive.providerUid}</span>
-                  {drive.connectedAt ? <span className="push-help"> · {drive.connectedAt.slice(0, 16).replace("T", " ")}</span> : null}
+                  {drive.connectedAt ? (
+                    <span className="push-help"> · 连接于 {drive.connectedAt.slice(0, 16).replace("T", " ")}</span>
+                  ) : null}
                 </span>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   {drive.status === "frozen" ? (
