@@ -635,14 +635,15 @@ export class PostgresWorkflowRepository implements WorkflowRepository {
 
   async listRecentNotificationsWithAccount(input?: {
     limit?: number;
-  }): Promise<Array<{ accountId: string; notification: NotificationEvent }>> {
+  }): Promise<Array<{ accountId: string; connectedStorageId: string | null; notification: NotificationEvent }>> {
     await this.ensureSchema();
     const result = await this.pool.query(
-      "SELECT n.payload AS payload, wr.account_id AS account_id FROM notifications n " +
+      "SELECT n.payload AS payload, wr.account_id AS account_id, wr.connected_storage_id AS connected_storage_id FROM notifications n " +
         "JOIN workflow_runs wr ON n.workflow_run_id = wr.id",
     );
     const rows = result.rows.map((row) => ({
       accountId: (row.account_id as string | undefined) ?? DEFAULT_ACCOUNT_ID,
+      connectedStorageId: (row.connected_storage_id as string | null | undefined) ?? null,
       notification: row.payload as NotificationEvent,
     }));
     rows.sort((left, right) => right.notification.createdAt.localeCompare(left.notification.createdAt));
