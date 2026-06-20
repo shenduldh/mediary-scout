@@ -20,6 +20,38 @@ export async function testStorageConnectionAction(
   return result;
 }
 
+export interface UnbindStorageActionResult {
+  ok: boolean;
+  message: string;
+}
+
+/** Settings「取消绑定」: hard-remove the drive from the account (frees the physical
+ *  drive + drops its cookie), keeping tracking data so re-binding the same drive
+ *  restores it. Refused while the drive has an in-flight acquisition. */
+export async function unbindStorageAction(storageId: string): Promise<UnbindStorageActionResult> {
+  const { getCurrentAccountId, getWorkflowRepository } = await import("../lib/workflow-runtime");
+  const accountId = await getCurrentAccountId();
+  const repository = getWorkflowRepository();
+
+  // Ownership: only a drive this account owns can be unbound.
+  const drives = await repository.listConnectedStorages(accountId);
+  if (!drives.some((drive) => drive.id === storageId)) {
+    return { ok: false, message: "未找到该网盘。" };
+  }
+
+  // Guard: refuse while an acquisition is queued/running on this drive (else the
+  // worker loses its credentials mid-flight).
+  const active = await repository.listActiveWorkflowRuns({ accountId, connectedStorageId: storageId });
+  if (active.length > 0) {
+    return { ok: false, message: "该盘还有获取任务在进行，完成或取消后再取消绑定。" };
+  }
+
+  await repository.deleteConnectedStorage(accountId, storageId);
+  revalidatePath("/settings");
+  revalidatePath("/");
+  return { ok: true, message: "已取消绑定（追踪记录已保留，重新绑定同一块盘即可恢复）。" };
+}
+
 export interface ConnectQuarkActionResult {
   ok: boolean;
   message: string;
