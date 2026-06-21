@@ -62,3 +62,39 @@ export function createAgentModelFromEnv(env: NodeJS.ProcessEnv = process.env): L
   const { providerSettings, modelId: id } = createAgentProviderConfig(options);
   return createOpenAICompatible(providerSettings)(id);
 }
+
+/**
+ * Normalize a user-entered OpenAI-compatible base URL. The provider appends
+ * `/chat/completions` itself, so a pasted full endpoint (or trailing slashes)
+ * must be stripped — otherwise requests hit `…/chat/completions/chat/completions`
+ * (404). Empty / whitespace-only → "".
+ */
+export function normalizeLlmBaseUrl(raw: string): string {
+  let s = raw.trim();
+  if (!s) return "";
+  s = s.replace(/\/+$/, "");
+  s = s.replace(/\/chat\/completions$/i, "");
+  s = s.replace(/\/+$/, "");
+  return s;
+}
+
+// Invisible codepoints not covered by the regex \s class: zero-width space,
+// zero-width non-joiner, zero-width joiner. (NBSP U+00A0 and BOM U+FEFF ARE in \s.)
+const INVISIBLE_CODEPOINTS = new Set([0x200b, 0x200c, 0x200d, 0xfeff]);
+
+/**
+ * Strip ALL whitespace + invisible characters from a pasted API key (keys are
+ * whitespace-free tokens). Defends against web-copy contamination — spaces,
+ * tabs, newlines, NBSP, zero-width chars, BOM — that would otherwise silently
+ * store a wrong value and make the user think their key is bad. Built from
+ * codepoints (no invisible literals in source — those are exactly what we strip).
+ */
+export function sanitizeLlmApiKey(raw: string): string {
+  let out = "";
+  for (const ch of raw) {
+    if (/\s/.test(ch)) continue;
+    if (INVISIBLE_CODEPOINTS.has(ch.codePointAt(0) ?? -1)) continue;
+    out += ch;
+  }
+  return out;
+}
