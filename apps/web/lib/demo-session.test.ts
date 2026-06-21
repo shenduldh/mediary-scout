@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listDemoAcquisitions, recordDemoAcquisition, type DemoAcquisitionEntry } from "./demo-session";
+import { listDemoAcquisitions, recordDemoAcquisition, demoCompletedItems, type DemoAcquisitionEntry } from "./demo-session";
 
 function fakeStorage(initial: Record<string, string> = {}) {
   const map = new Map(Object.entries(initial));
@@ -56,5 +56,25 @@ describe("demo-session", () => {
   it("null storage (SSR) → empty list, record is a no-op (no throw)", () => {
     expect(listDemoAcquisitions(null)).toEqual([]);
     expect(() => recordDemoAcquisition(entry(1), null)).not.toThrow();
+  });
+});
+
+describe("demoCompletedItems", () => {
+  it("empty → []", () => {
+    expect(demoCompletedItems([])).toEqual([]);
+  });
+  it("maps entries to completed activity items (status complete, demo runId)", () => {
+    const items = demoCompletedItems([
+      { tmdbId: 27205, title: "盗梦空间", year: 2010, type: "movie", posterPath: "/p.jpg" },
+    ]);
+    expect(items).toHaveLength(1);
+    const it0 = items[0]!;
+    expect(it0.workflowRunId).toBe("demo-27205");
+    expect(it0.title).toBe("盗梦空间");
+    expect(it0.status).toBe("complete");
+    expect(it0.posterPath).toBe("/p.jpg");
+    expect(it0.seasonLabel).toBeNull();
+    expect(it0.sizeText).toBeNull();
+    expect(typeof it0.createdAt).toBe("string");
   });
 });
