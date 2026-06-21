@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createBootstrapPan115CookieStorageExecutor,
   createProtectedStorage115Executor,
   infoHashFromMagnet,
   Pan115ApiGuard,
@@ -40,6 +41,13 @@ describe("Storage115Executor", () => {
         apiGuardOptions: { minDelayMs: 0 },
       }),
     ).toThrow("MEDIA_TRACK_115_WRITE_SCOPE_REQUIRED");
+  });
+
+  it("createBootstrapPan115CookieStorageExecutor does NOT require a write scope (escapes the provisioning catch-22)", () => {
+    // The protected factory throws on empty scope; the bootstrap variant must not,
+    // so connect-time provisionCategoryDirs can create the media tree under root.
+    expect(() => createBootstrapPan115CookieStorageExecutor({ cookie: "UID=1_abc" })).not.toThrow();
+    expect(createBootstrapPan115CookieStorageExecutor({ cookie: "UID=1_abc" })).toBeInstanceOf(Storage115Executor);
   });
 
   it("uses the configured 115 test root as the default write scope", async () => {
