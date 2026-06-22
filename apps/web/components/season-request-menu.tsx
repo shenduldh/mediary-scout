@@ -69,7 +69,7 @@ export function SeasonRequestMenu({
   }
 
   if (isLockedResult(result)) {
-    return <RequestedBadge title={result?.message} />;
+    return <RequestedBadge title={result?.message} storageId={storageId} />;
   }
 
   const submit = () => {

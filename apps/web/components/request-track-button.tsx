@@ -83,7 +83,7 @@ export function RequestTrackButton({
   }
 
   if (inProgress) {
-    return <RequestedBadge title={result?.message} />;
+    return <RequestedBadge title={result?.message} storageId={storageId} />;
   }
 
   if (reserved) {
