@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   acquireLlmPreflightError,
+  customDirNamesFromEnv,
+  isCookieSecure,
   getLlmConfig,
   getPanSouBaseUrl,
   getProwlarrConfig,
@@ -213,3 +215,85 @@ describe("getPanSouBaseUrl", () => {
     expect(DEFAULT_PANSOU_BASE_URL).toMatch(/^https?:\/\//);
   });
 });
+
+describe("isCookieSecure (the LAN/HTTP login-bounce fix, #60)", () => {
+  const req = (opts: { xfp?: string; protocol?: string }) =>
+    ({
+      headers: { get: (n: string) => (n.toLowerCase() === "x-forwarded-proto" ? opts.xfp ?? null : null) },
+      nextUrl: { protocol: opts.protocol },
+    }) as unknown as Parameters<typeof isCookieSecure>[0];
+
+  beforeEach(() => {
+    delete process.env.MEDIA_TRACK_COOKIE_SECURE;
+  });
+
+  it("env=0 forces insecure even over HTTPS (operator opt-out)", () => {
+    process.env.MEDIA_TRACK_COOKIE_SECURE = "0";
+    expect(isCookieSecure(req({ xfp: "https", protocol: "https:" }))).toBe(false);
+  });
+
+  it("env=1 forces secure even over HTTP (operator opt-in)", () => {
+    process.env.MEDIA_TRACK_COOKIE_SECURE = "1";
+    expect(isCookieSecure(req({ protocol: "http:" }))).toBe(true);
+  });
+
+  it("auto: plain-HTTP LAN (no proxy, http) → insecure so the cookie is actually sent (the bug)", () => {
+    expect(isCookieSecure(req({ protocol: "http:" }))).toBe(false);
+  });
+
+  it("auto: reverse proxy / CF Tunnel sets x-forwarded-proto=https → secure", () => {
+    expect(isCookieSecure(req({ xfp: "https", protocol: "http:" }))).toBe(true);
+  });
+
+  it("auto: direct HTTPS → secure", () => {
+    expect(isCookieSecure(req({ protocol: "https:" }))).toBe(true);
+  });
+
+  it("auto: x-forwarded-proto comma list uses the first (client-facing) hop", () => {
+    expect(isCookieSecure(req({ xfp: "https, http", protocol: "http:" }))).toBe(true);
+  });
+
+  // Copilot #61: scheme strings vary by proxy/framework — x-forwarded-proto is
+  // usually "https" but some send "https:"; nextUrl.protocol is usually "https:"
+  // but could be "https". Normalize (strip trailing colon) so neither form drops Secure.
+  it("auto: x-forwarded-proto with a trailing colon (https:) → still secure", () => {
+    expect(isCookieSecure(req({ xfp: "https:", protocol: "http:" }))).toBe(true);
+  });
+
+  it("auto: nextUrl.protocol without a colon (https) → still secure", () => {
+    expect(isCookieSecure(req({ protocol: "https" }))).toBe(true);
+  });
+
+  it("auto: x-forwarded-proto http with a colon (http:) → insecure", () => {
+    expect(isCookieSecure(req({ xfp: "http:", protocol: "http:" }))).toBe(false);
+  });
+});
+
+describe("customDirNamesFromEnv (brand-agnostic 自定义媒体库目录名)", () => {
+  const env = (m: Record<string, string>) => m as unknown as NodeJS.ProcessEnv;
+
+  it("nothing set → {} (defaults apply downstream)", () => {
+    expect(customDirNamesFromEnv(env({}))).toEqual({});
+  });
+
+  it("reads + trims the four generic vars (applies to every drive brand)", () => {
+    expect(
+      customDirNamesFromEnv(
+        env({
+          MEDIA_TRACK_LIBRARY_ROOT_DIR: " 我的影音库 ",
+          MEDIA_TRACK_LIBRARY_MOVIES_DIR: "电影",
+          MEDIA_TRACK_LIBRARY_TV_DIR: "剧集",
+          MEDIA_TRACK_LIBRARY_ANIME_DIR: "番剧",
+        }),
+      ),
+    ).toEqual({ rootName: "我的影音库", moviesName: "电影", tvName: "剧集", animeName: "番剧" });
+  });
+
+  it("blank / whitespace values are omitted (never an empty-string root → no write-scope footgun)", () => {
+    expect(
+      customDirNamesFromEnv(
+        env({ MEDIA_TRACK_LIBRARY_ROOT_DIR: "", MEDIA_TRACK_LIBRARY_MOVIES_DIR: "   ", MEDIA_TRACK_LIBRARY_TV_DIR: "剧集" }),
+      ),
+    ).toEqual({ tvName: "剧集" });
+  });
+})

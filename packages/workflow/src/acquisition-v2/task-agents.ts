@@ -3,6 +3,7 @@ import { runAcquisitionAgent, type AcquisitionAgentResult } from "./agent-loop.j
 import type { AgentToolEvent } from "./activity.js";
 import type { TaskSandbox } from "./sandbox.js";
 import { skillIndexForAgent } from "./skill.js";
+import { getStorageBrand } from "../storage-brands.js";
 
 /**
  * The 字字泣血 mandate: the agent MUST read its skill manual before acting and
@@ -64,6 +65,13 @@ export interface TaskAgentPromptOptions {
    *  reachable, flagged 可能无中字) instead of the HARD reportNoCoverage. Set by
    *  buildMovieSystemPrompt; TV/anime leave it false so the floor stays hard. */
   subtitleFallback?: boolean;
+  /** TMDB origin_country of the title (e.g. ["CN"], ["US"]). When it includes CN,
+   *  the work is natively Chinese-spoken → the 中文 subtitle floor is irrelevant
+   *  (no 中字 to hunt), so languageLine skips it. Empty/absent → normal floor. */
+  originCountries?: string[];
+  /** Count of pre-warmed raw candidates (system pre-searched the raw keyword).
+   *  When present, prompt includes a pointer to viewResourceSnapshot. */
+  prefetchedCandidateCount?: number;
 }
 
 /** A brand-specific transfer-model note. 夸克 differs from 115 (转存分享链 / 无磁力)
@@ -88,11 +96,27 @@ function languageLine(options: TaskAgentPromptOptions): string {
   // "the title contains Chinese chars" (PanSou prepends the show's 中文片名 to English
   // scene filenames, which fools that). The 中字 resource MUST win when reachable.
   if (lang.includes("中")) {
+    // 国产 (CN-origin) titles are natively Chinese-spoken — there is no 中字 to hunt
+    // and no 生肉 risk. Skip the whole subtitle floor (the 环太平洋 follow-up): don't
+    // burn budget on 中字/国语 markers, just pick on quality/completeness.
+    if ((options.originCountries ?? []).includes("CN")) {
+      return `\nLANGUAGE PREFERENCE: 这是中国大陆出品(国产)作品,原生中文对白 —— 无需做任何中文字幕判定,也不要把 中字/国语/双语 等词拼进搜索关键词。直接按画质/完整性正常选片即可。`;
+    }
+
+    // Soft default: Chinese-titled resources are more likely to carry Chinese subs
+    // (don't treat lack of "中字" marker as proof of raw). Strengthen this default
+    // for 115/quark (Chinese-world drives) but keep it conservative for guangya.
+    const provider = options.storageProvider ?? "pan115";
+    const brand = getStorageBrand(provider);
+    const brandStrengthen = brand.assumeChineseSubsFromChineseTitle
+      ? ` 尤其是 ${brand.label} 本就是中文世界的网盘,资源主要来自中文圈 —— 资源名是中文的更应默认带有中文字幕。`
+      : "";
+
     const head = `\nLANGUAGE PREFERENCE: the user reads 中文 subtitles — ${
       options.subtitleFallback ? "strongly preferred; search hard for it first" : "a HARD requirement, not a nice-to-have"
     }. Judge Chinese subs from the RELEASE, NOT from "the title contains Chinese characters": PanSou often prepends the show's 中文片名 to an English scene filename (中文片名-Name.Year.1080p.WEB-DL.Codec-GROUP) — mentally STRIP that prefix and judge what remains.
 - English scene release (Name.Year.Resolution.Source.Codec-GROUP — dotted ASCII + a scene group like EaZy/RARBG/Guyute/NTb/FLUX/CMCT) → assume NO 中文 subs: foreign-only, the user CANNOT read it.
-- Chinese-community release (a real 中文 release name; or 国语/中字/中英/简繁/双语/CHS-ENG/CHS/中英双字/国粤双语 markers; or a Chinese release group; bracketed/spaced formatting) → ships 中文 subs. Do NOT require the literal "中字" token — a genuine Chinese-community release carries them.
+- Chinese-community release (a real 中文 release name; or 国语/中字/中英/简繁/双语/CHS-ENG/CHS/中英双字/国粤双语 markers; or a Chinese release group; bracketed/spaced formatting) → ships 中文 subs. Do NOT require the literal "中字" token — a genuine Chinese-community release carries them. 资源名是中文的,默认就应该带有中文字幕(别因为标题不写「中字」字样就当成生肉)。${brandStrengthen}
 - NEVER infer 中文 subs from "it has a subtitle file" or "it's an .mkv": an mkv embeds subtitles that are usually NOT 中文; only the release naming tells you.`;
     // Movie: SOFT last-resort fallback. TV/anime: HARD floor (no 生肉 dumping — a raw
     // Japanese episode with no subs is unwatchable and would falsely mark an episode
@@ -119,11 +143,18 @@ function qualityGuidanceBlock(options: TaskAgentPromptOptions): string {
     : `\nQUALITY PREFERENCE (召回后选片优先级,不影响搜索词):\n${options.qualityGuidance}\n`;
 }
 
+function rawSnapshotPointer(options: TaskAgentPromptOptions): string {
+  if (options.prefetchedCandidateCount === undefined || options.prefetchedCandidateCount === 0) {
+    return "";
+  }
+  return `\n📋 RAW SNAPSHOT (活期文档): The system has already pre-searched the raw keyword (bare title) for you and found ${options.prefetchedCandidateCount} candidates. Your FIRST step: call viewResourceSnapshot() to view this live document — it's free, read-only, and contains all the raw candidates (id + title). Do NOT use searchResources to re-search the raw keyword; searchResources is ONLY for 繁体/英文/原名 upgrades when the raw snapshot is insufficient.\n`;
+}
+
 export function buildTvAnimeSystemPrompt(options: TaskAgentPromptOptions): string {
   return `${SANDBOX_BOUNDARY}
 
 ${skillMandate("tv")}
-
+${rawSnapshotPointer(options)}
 You own the COMPLETE acquisition judgment for one OR MORE seasons of a TV/anime title in scope: keyword strategy, target matching, season/episode coverage, package recognition + normalization, provider-ahead reasoning, staging→season extraction, residue classification, same-episode dedup grouping, and marking. It is ONE deliberation, not separate filters. The need is simply "应有 vs 实有 = which episodes are still missing"; it may span several seasons.
 
 Target matching:
@@ -155,7 +186,7 @@ export function buildMovieSystemPrompt(options: TaskAgentPromptOptions): string 
   return `${SANDBOX_BOUNDARY}
 
 ${skillMandate("movie")}
-
+${rawSnapshotPointer(options)}
 You own the COMPLETE acquisition judgment for ONE movie: target正片 identification (guard against remakes/wrong films — cross-check BOTH title AND year), main-file selection, quality tradeoff, rejection of extras/trailers/foreign works, import cleanup, and marking. A movie is a SINGLE video file — there are no seasons or episodes; its one synthetic coverage token is "MOVIE".
 
 Identity (the hard part): the candidate must be THIS film, not a remake, sequel, prequel, or same-IP different film. Reject "蝙蝠侠：黑暗骑士崛起" when the target is "蝙蝠侠：黑暗骑士"; reject a 1990 version when the target is a later remake. When identity is unclear, do not transfer speculatively.

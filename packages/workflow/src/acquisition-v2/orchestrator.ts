@@ -46,6 +46,9 @@ export interface RunAcquisitionV2Request {
   searchBudget?: number;
   maxSteps?: number;
   preferredLanguage?: string;
+  /** TMDB origin_country of the title — when it includes CN the movie prompt skips
+   *  the 中文 subtitle floor (国产片 natively Chinese-spoken). */
+  originCountries?: string[];
   /** This title's per-media-type PanSou keyword recipe, injected into the prompt. */
   searchHints?: string;
   /** Rendered quality-preference guidance (召回后选片优先级), injected into the prompt. */
@@ -106,11 +109,26 @@ export async function runAcquisitionV2(request: RunAcquisitionV2Request): Promis
     ...(request.searchBudget === undefined ? {} : { searchBudget: request.searchBudget }),
   });
 
+  // Pre-warm the raw snapshot (bare title) BEFORE building the system prompt, so the
+  // prefetchedCandidateCount pointer can be injected. If the provider fails (network
+  // error, etc.), gracefully degrade: no pointer, agent searches normally.
+  let prefetchedCandidateCount: number | undefined;
+  try {
+    const rawKeyword = request.target.title; // bare title (中文名), no quality/subtitle/year
+    await sandbox.primeRawSnapshot(rawKeyword);
+    prefetchedCandidateCount = sandbox.viewResourceSnapshot().candidateCount;
+  } catch (error) {
+    // Provider unavailable → no pre-warm; agent will searchResources normally.
+    // Do NOT crash the workflow.
+    prefetchedCandidateCount = undefined;
+  }
+
   const common = {
     sandbox,
     model: request.model,
     ...(request.maxSteps === undefined ? {} : { maxSteps: request.maxSteps }),
     ...(request.preferredLanguage === undefined ? {} : { preferredLanguage: request.preferredLanguage }),
+    ...(request.originCountries === undefined ? {} : { originCountries: request.originCountries }),
     ...(request.searchHints === undefined ? {} : { searchHints: request.searchHints }),
     ...(request.qualityGuidance === undefined ? {} : { qualityGuidance: request.qualityGuidance }),
     ...(request.storageProvider === undefined ? {} : { storageProvider: request.storageProvider }),
@@ -123,6 +141,8 @@ export async function runAcquisitionV2(request: RunAcquisitionV2Request): Promis
     ...(request.executor.apiCallBudget
       ? { budgetSoftAt: budgetSoftThreshold(request.executor.apiCallBudget()) }
       : {}),
+    // Inject the prefetched candidate count into the prompt so the pointer renders.
+    ...(prefetchedCandidateCount === undefined ? {} : { prefetchedCandidateCount }),
   };
 
   const result =

@@ -176,8 +176,8 @@ describe("fake adapters", () => {
     const provider = new FakeResourceProvider({
       keywordResults: {
         "翘楚 4K": [
-          { title: "翘楚 S01E13 4K", episodeHints: ["S01E13"] },
-          { title: "翘楚 S01E14 4K", episodeHints: ["S01E14"] },
+          { title: "翘楚 S01E13 4K" },
+          { title: "翘楚 S01E14 4K" },
         ],
       },
     });
@@ -185,14 +185,14 @@ describe("fake adapters", () => {
     const snapshot = await provider.search({ keyword: "翘楚 4K" });
 
     expect(snapshot.candidates.map((candidate) => candidate.index)).toEqual([0, 1]);
-    expect(snapshot.candidates.map((candidate) => candidate.episodeHints)).toEqual([["S01E13"], ["S01E14"]]);
+    expect(snapshot.candidates.map((candidate) => candidate.title)).toEqual(["翘楚 S01E13 4K", "翘楚 S01E14 4K"]);
   });
 
   it("uses distinct stable ids across multiple resource snapshots", async () => {
     const provider = new FakeResourceProvider({
       keywordResults: {
-        "翘楚 4K": [{ title: "翘楚 S01E13 4K", episodeHints: ["S01E13"] }],
-        "翘楚 1080p": [{ title: "翘楚 S01E13 1080p", episodeHints: ["S01E13"] }],
+        "翘楚 4K": [{ title: "翘楚 S01E13 4K" }],
+        "翘楚 1080p": [{ title: "翘楚 S01E13 1080p" }],
       },
     });
 
@@ -279,8 +279,6 @@ function candidateFixture(id: string): ResourceCandidate {
     title: "Show S01E01 4K",
     type: "115",
     source: "test",
-    episodeHints: ["S01E01"],
-    qualityHints: ["4K"],
     providerPayload: {
       url: "https://115.com/s/example",
       rawType: "115",

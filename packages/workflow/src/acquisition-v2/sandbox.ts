@@ -10,6 +10,31 @@ import type { ResourceProviderV2, ResourceSnapshotV2 } from "./fake-provider.js"
 import type { SimTreeFile, StorageV2, TransferAttemptResult } from "./storage-115-simulator.js";
 import { isSystemicTransferBlockMessage } from "./transfer-block.js";
 
+/** Quality / subtitle / source tokens that PanSou share titles almost never carry,
+ *  so appending them collapses recall (实测归零). Case-insensitive; word-ish so
+ *  "1080p" / "WEB-DL" / "BluRay" match as units. 中字/国语/双语/字幕 are CJK so they
+ *  match anywhere. */
+const QUALITY_SUBTITLE_TOKEN =
+  /\b(?:4k|2160p|1080p|720p|hdr|dv|remux|web-?dl|bluray|bdrip)\b|蓝光|中字|国语|双语|字幕/gi;
+
+const STRIP_NOTICE =
+  "已从关键词移除画质/字幕词(如 4K/1080p/蓝光/中字/字幕):PanSou 是通配符匹配,加这些只会把召回打成子集或归零,raw 裸标题召回最全。已改用裸标题搜索。";
+
+/** Strip quality/subtitle tokens from a search keyword and fold the resulting
+ *  whitespace. `stripped` is true ONLY when an actual QUALITY_SUBTITLE_TOKEN was
+ *  removed — NOT when mere whitespace was collapsed (so "奥本海默   第二季" does
+ *  not falsely trip the strip notice). */
+function stripQualitySubtitleTokens(keyword: string): { keyword: string; stripped: boolean } {
+  // QUALITY_SUBTITLE_TOKEN has the /g flag → RegExp.test() is stateful on lastIndex.
+  // Reset BEFORE and after the test so a non-zero lastIndex (from any prior/concurrent
+  // use of this shared regex) can never make `stripped` a false negative.
+  QUALITY_SUBTITLE_TOKEN.lastIndex = 0;
+  const stripped = QUALITY_SUBTITLE_TOKEN.test(keyword);
+  QUALITY_SUBTITLE_TOKEN.lastIndex = 0;
+  const cleaned = keyword.replace(QUALITY_SUBTITLE_TOKEN, " ").replace(/\s+/g, " ").trim();
+  return { keyword: cleaned, stripped };
+}
+
 /**
  * The task sandbox for the Acquisition V2 rebuild — the permission cage the
  * strong agent runs inside. It owns the budgets, the scope, the observed
@@ -62,6 +87,9 @@ export interface SearchToolResult {
    *  normal 8) — tells the agent it is on its last searches and the subtitle
    *  fallback policy is now in play. */
   note?: string;
+  /** Set when quality/subtitle tokens were stripped from the agent's keyword
+   *  (C5 guardrail): tells the agent the words were dropped and raw recalls more. */
+  notice?: string;
 }
 
 export interface TransferToolResult {
@@ -96,6 +124,9 @@ export class TaskSandbox {
   /** Set when the agent landed a movie via the 中文字幕 last-resort fallback (no
    *  confirmed 中字). Surfaced in finish() → notification 可能无中文字幕(兜底). */
   private subtitleFallbackUsed = false;
+  /** Raw snapshot from pre-warming (system-initiated search). Stored so
+   *  viewResourceSnapshot can return it multiple times without cost. */
+  private rawSnapshot: ResourceSnapshotV2 | null = null;
 
   constructor(options: TaskSandboxOptions) {
     this.provider = options.provider;
@@ -146,16 +177,36 @@ export class TaskSandbox {
    *  searches are capped by the budget. Every observed snapshot is recorded so a
    *  later transferCandidate can be bound to a snapshot seen in THIS task. */
   async searchResources(keyword: string): Promise<SearchToolResult> {
+    // C5 guardrail: PanSou wildcard-matches share titles, which almost never carry
+    // 画质/字幕 markers — so a quality/subtitle-laden keyword collapses recall to a
+    // subset or to ZERO (实测 铁拳教育 84→+1080p=0, 奥本海默 185→+中字=0). Strip those
+    // tokens BEFORE the title gate so the bare title still passes, and tell the
+    // agent the words were dropped (raw recalls the most). Not a hard reject — it
+    // does not second-guess the agent's title choice, only removes proven-dead noise.
+    const stripped = stripQualitySubtitleTokens(keyword);
+    const effectiveKeyword = stripped.keyword;
+
     // Hard guard: a keyword that names no title term is a genre/year-only
     // fallback ("2026 电影") — it can only return noise. Reject it BEFORE the
     // budget/provider so it costs nothing and the agent must re-keyword with the
     // real title. (asEvidence turns this throw into the {error} the agent reads.)
-    if (!keywordReferencesTitle(keyword, this.titleTerms)) {
+    if (!keywordReferencesTitle(effectiveKeyword, this.titleTerms)) {
       throw new Error(
-        `搜索关键词必须包含片名(片名/原名/别名)。"${keyword}" 不含片名,只会返回噪音,已拒绝。请用包含片名的关键词(可附加年份/原名/4K/全集 等),不要用纯类型或纯年份(如 "电影"、"2026 电影")。`,
+        `搜索关键词必须包含片名(片名/原名/别名)。"${keyword}" 不含片名,只会返回噪音,已拒绝。请用包含片名的关键词(裸标题召回最全;繁体/英文/原名 可作升级。注意:画质/字幕词会被自动移除,年份/季 等词虽不移除但同样会减召回,别加),不要用纯类型或纯年份(如 "电影"、"2026 电影")。`,
       );
     }
-    const normalized = normalizeSearchKeyword(keyword);
+    const normalized = normalizeSearchKeyword(effectiveKeyword);
+    const notice = stripped.stripped ? STRIP_NOTICE : undefined;
+
+    // Check dedup FIRST — if this keyword was already searched (either by agent
+    // or by system pre-warming), return the cached snapshot without hitting the
+    // provider or consuming budget. This covers both agent re-searches and agent
+    // searching a keyword that was pre-warmed.
+    const cachedSnapshot = this.snapshotByKeyword.get(normalized);
+    if (cachedSnapshot) {
+      return { snapshot: cachedSnapshot, deduped: true, ...(notice ? { notice } : {}) };
+    }
+
     const decision = decideSearchGate({
       normalizedKeyword: normalized,
       seenKeywords: this.seenKeywords,
@@ -163,8 +214,10 @@ export class TaskSandbox {
       ...(this.softThreshold === undefined ? {} : { softThreshold: this.softThreshold }),
     });
     if (decision === "duplicate") {
-      const prior = this.snapshotByKeyword.get(normalized);
-      return prior ? { snapshot: prior, deduped: true } : { deduped: true };
+      // This branch should now be unreachable since we check snapshotByKeyword above,
+      // but keep it for backward compatibility in case seenKeywords has an entry but
+      // snapshotByKeyword doesn't (should never happen in practice).
+      return { deduped: true, ...(notice ? { notice } : {}) };
     }
     if (decision === "exhausted") {
       return { refused: this.budgetExhaustedMessage() };
@@ -172,10 +225,14 @@ export class TaskSandbox {
     // "fresh" and "reserve" both perform the search; "reserve" (movie 8+2) attaches
     // the note that flips the agent into last-resort subtitle-fallback mode.
     this.seenKeywords.add(normalized);
-    const snapshot = await this.provider.search(keyword);
+    const snapshot = await this.provider.search(effectiveKeyword);
     this.snapshotByKeyword.set(normalized, snapshot);
     this.observedSnapshots.set(snapshot.id, snapshot);
-    return decision === "reserve" ? { snapshot, note: this.reserveNote() } : { snapshot };
+    return {
+      snapshot,
+      ...(decision === "reserve" ? { note: this.reserveNote() } : {}),
+      ...(notice ? { notice } : {}),
+    };
   }
 
   /** Budget-exhausted refusal. For a movie (subtitle fallback) it authorizes the
@@ -543,5 +600,54 @@ export class TaskSandbox {
       );
     }
     return { reason, searchesPerformed: this.seenKeywords.size };
+  }
+
+  /** Pre-warm a raw search (system-initiated, does NOT consume agent's distinct
+   *  search budget). The snapshot is recorded in dedup/registry/observedSnapshots
+   *  just like an agent search, so agent can later transferCandidate by id. Calling
+   *  this multiple times replaces the prior raw snapshot. */
+  async primeRawSnapshot(keyword: string): Promise<void> {
+    const normalized = normalizeSearchKeyword(keyword);
+    // Perform the search WITHOUT marking it as seen by the agent (don't add to
+    // seenKeywords) — so it doesn't consume the distinct search budget.
+    const snapshot = await this.provider.search(keyword);
+
+    // Record in dedup map so agent re-searching this keyword hits dedup
+    this.snapshotByKeyword.set(normalized, snapshot);
+
+    // Record in observed snapshots so transferCandidate can resolve candidate ids
+    this.observedSnapshots.set(snapshot.id, snapshot);
+
+    // Store for viewResourceSnapshot
+    this.rawSnapshot = snapshot;
+  }
+
+  /** Read-only tool: view the pre-warmed raw snapshot as a structured document.
+   *  Free, repeatable, does NOT consume search budget. Returns id + title for each
+   *  candidate (truncated at 120 if excessive). */
+  viewResourceSnapshot(): { document: string; candidateCount: number } {
+    if (!this.rawSnapshot) {
+      return {
+        document: "No raw snapshot available. Call primeRawSnapshot first.",
+        candidateCount: 0,
+      };
+    }
+
+    const candidates = this.rawSnapshot.candidates;
+    const total = candidates.length;
+    const truncated = candidates.slice(0, 120);
+    const remaining = total - truncated.length;
+
+    let document = `📋 Raw snapshot (${total} candidates):\n\n`;
+
+    for (const candidate of truncated) {
+      document += `[${candidate.id}] ${candidate.title}\n`;
+    }
+
+    if (remaining > 0) {
+      document += `\n... 还有 ${remaining} 条。如需更多,可用 searchResources 搜繁体/英文关键词。\n`;
+    }
+
+    return { document, candidateCount: total };
   }
 }

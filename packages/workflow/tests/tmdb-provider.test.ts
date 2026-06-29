@@ -377,6 +377,9 @@ describe("TmdbSearchProvider", () => {
 
     expect(target.title.year).toBe(2001);
     expect(target.title.releaseDate).toBe("2001-07-20"); // full date kept for the reserve air-time gate
+    // origin_country (mapped from production_countries) is carried so the movie agent
+    // can skip the 中文 subtitle floor for 国产片 (a CN movie would carry ["CN"]).
+    expect(target.title.originCountries).toEqual(["JP"]);
     expect(target.keyword).toBe("千与千寻"); // bare title — no quality token in the keyword
   });
 });
@@ -441,6 +444,89 @@ describe("TmdbMetadataProvider multi-access fallback", () => {
       },
     });
     await expect(provider.getMovieDetails(278)).rejects.toThrow(/access/i);
+  });
+
+  it("remembers a dead access and skips it on later calls within the same provider (issue #68)", async () => {
+    // The #68 repro: a user TMDB token makes api.themoviedb.org the first access.
+    // When that endpoint is unreachable (blocked network) it fails per call. A
+    // search fires ~11 TMDB calls; without memo, EVERY call re-pays the dead
+    // direct hop → cumulative timeout → "A server error occurred". The provider
+    // must probe the dead access once, then go straight to the working proxy.
+    const calls: string[] = [];
+    const provider = new TmdbMetadataProvider({
+      accesses: [
+        { baseURL: "https://primary.example/3", readToken: "userkey" },
+        { baseURL: "https://proxy.example" },
+      ],
+      fetchJson: async (url) => {
+        calls.push(url);
+        if (url.startsWith("https://primary.example")) throw new Error("ETIMEDOUT");
+        return movieJson(278);
+      },
+    });
+    await provider.getMovieDetails(278);
+    await provider.getMovieDetails(550);
+    await provider.getMovieDetails(155);
+    const primaryCalls = calls.filter((u) => u.startsWith("https://primary.example"));
+    const proxyCalls = calls.filter((u) => u.startsWith("https://proxy.example"));
+    expect(primaryCalls).toHaveLength(1); // probed once, then remembered as dead
+    expect(proxyCalls).toHaveLength(3); // every call still resolves via the proxy
+  });
+
+  it("keys the dead set by baseURL + token, so a failing user key does not poison a working env key on the same host (Copilot #69)", async () => {
+    // getTmdbAccesses produces two accesses with the SAME baseURL (TMDB direct)
+    // but different tokens: the user key, then the env token. A bad user key must
+    // not make later calls skip the env-token access (same host) — only the exact
+    // failing access should be remembered as dead.
+    const tokensTried: string[] = [];
+    const provider = new TmdbMetadataProvider({
+      accesses: [
+        { baseURL: "https://api.themoviedb.org/3", readToken: "bad-user-key" },
+        { baseURL: "https://api.themoviedb.org/3", readToken: "good-env-key" },
+        { baseURL: "https://proxy.example" },
+      ],
+      fetchJson: async (_url, init) => {
+        const auth = init.headers.Authorization ?? "(none)";
+        tokensTried.push(auth);
+        if (auth === "Bearer bad-user-key") throw new Error("HTTP 401");
+        return movieJson(278);
+      },
+    });
+    await provider.getMovieDetails(278);
+    await provider.getMovieDetails(550);
+    await provider.getMovieDetails(155);
+    // The good env key is used on every call; the proxy is never needed.
+    expect(tokensTried.filter((a) => a === "Bearer good-env-key")).toHaveLength(3);
+    expect(tokensTried.filter((a) => a === "(none)")).toHaveLength(0); // proxy never hit
+    // The bad user key is probed once, then remembered as dead (not retried).
+    expect(tokensTried.filter((a) => a === "Bearer bad-user-key")).toHaveLength(1);
+  });
+
+  it("the dead key keeps readToken undefined distinct from an empty-string token (Copilot #70)", async () => {
+    // `readToken: ""` (Authorization "Bearer ") and `readToken: undefined` (no
+    // Authorization) are different accesses; the dead-access key must not conflate
+    // them via `?? ""`, else a failing "" access on a host would also disable the
+    // undefined-token access there. (Defensive: getTmdbAccesses never emits "".)
+    let proxyHits = 0;
+    const provider = new TmdbMetadataProvider({
+      accesses: [
+        { baseURL: "https://same.example/3", readToken: "" }, // Authorization "Bearer " → fails
+        { baseURL: "https://same.example/3" }, // undefined token, same host → must stay live
+        { baseURL: "https://proxy.example" },
+      ],
+      fetchJson: async (url, init) => {
+        if (url.startsWith("https://proxy.example")) {
+          proxyHits += 1;
+          return movieJson(278);
+        }
+        if (init.headers.Authorization === "Bearer ") throw new Error("HTTP 401");
+        return movieJson(278); // the undefined-token same-host access succeeds
+      },
+    });
+    await provider.getMovieDetails(278);
+    await provider.getMovieDetails(550);
+    // The undefined-token direct access serves every call; the proxy is never needed.
+    expect(proxyHits).toBe(0);
   });
 
   it("sends Authorization only when the access has a readToken", async () => {
